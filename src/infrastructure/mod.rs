@@ -11,5 +11,5 @@ pub mod transcription;
 #[cfg(feature = "whisper")]
 pub use transcription::{
     ModelSize, ModelSource, Segment, Token, TranscriptionResult, WhisperContextWrapper,
-    WhisperModelManager,
+    WhisperModelManager, WhisperTranscriber,
 };

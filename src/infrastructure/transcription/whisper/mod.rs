@@ -22,7 +22,13 @@ pub mod context;
 pub mod model_manager;
 
 #[cfg(feature = "whisper")]
+pub mod transcriber;
+
+#[cfg(feature = "whisper")]
 pub use context::{Segment, Token, TranscriptionResult, WhisperContextWrapper};
 
 #[cfg(feature = "whisper")]
 pub use model_manager::{ModelSize, ModelSource, WhisperModelManager};
+
+#[cfg(feature = "whisper")]
+pub use transcriber::WhisperTranscriber;

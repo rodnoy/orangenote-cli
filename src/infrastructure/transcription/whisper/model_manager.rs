@@ -356,6 +356,11 @@ impl WhisperModelManager {
     pub fn format_size(&self, model: ModelSize) -> String {
         format!("~{} MB", model.size_mb())
     }
+
+    /// Get the cache directory path
+    pub fn cache_dir(&self) -> &Path {
+        &self.cache_dir
+    }
 }
 
 impl Default for WhisperModelManager {

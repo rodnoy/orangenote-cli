@@ -1,8 +1,11 @@
 //! Audio processing module
 //!
-//! Handles audio file reading, metadata extraction, and format detection.
+//! Handles audio file reading, metadata extraction, format detection,
+//! and audio processing (decoding, resampling, PCM conversion).
 //! Supports MP3, WAV, FLAC, M4A, OGG formats.
 
 pub mod decoder;
+pub mod processor;
 
 pub use decoder::{AudioDecoder, AudioFormat, AudioMetadata};
+pub use processor::{AudioProcessor, AudioSamples, WHISPER_SAMPLE_RATE};

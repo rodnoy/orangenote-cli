@@ -20,6 +20,10 @@ pub type WhisperState = c_void;
 /// Whisper token type
 pub type WhisperToken = i32;
 
+/// Sampling strategy constants
+pub const WHISPER_SAMPLING_GREEDY: u32 = 0;
+pub const WHISPER_SAMPLING_BEAM_SEARCH: u32 = 1;
+
 /// Whisper sampling parameters
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]

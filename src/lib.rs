@@ -5,12 +5,14 @@
 
 pub mod infrastructure;
 
-pub use infrastructure::audio::{AudioDecoder, AudioFormat, AudioMetadata};
+pub use infrastructure::audio::{
+    AudioDecoder, AudioFormat, AudioMetadata, AudioProcessor, AudioSamples, WHISPER_SAMPLE_RATE,
+};
 
 #[cfg(feature = "whisper")]
 pub use infrastructure::{
     ModelSize, ModelSource, Segment, Token, TranscriptionResult, WhisperContextWrapper,
-    WhisperModelManager,
+    WhisperModelManager, WhisperTranscriber,
 };
 
 /// Library version

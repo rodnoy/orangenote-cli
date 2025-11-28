@@ -25,6 +25,9 @@ hound = "3.5"
 # Media info via command line as fallback
 which = "5.0"
 
+# Audio decoding and resampling
+symphonia = { version = "0.5", features = ["default"] }
+
 # Whisper transcription (optional)
 # Using custom FFI bindings instead of whisper-rs crate
 reqwest = { version = "0.11", features = ["stream"], optional = true }

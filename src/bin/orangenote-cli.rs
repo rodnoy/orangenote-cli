@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use log::info;
-use orangenote_cli::AudioDecoder;
 use std::path::PathBuf;
+
+#[cfg(feature = "whisper")]
+use orangenote_cli::AudioDecoder;
 
 /// OrangeNote CLI - Offline audio transcription tool
 #[derive(Parser, Debug)]
@@ -50,6 +52,10 @@ enum Commands {
         /// Number of threads for processing
         #[arg(short, long, default_value = "4")]
         threads: usize,
+
+        /// Translate to English
+        #[arg(long)]
+        translate: bool,
     },
 
     /// Manage transcription models
@@ -102,6 +108,7 @@ fn init_logging(verbose: bool, log_level: Option<String>) {
         .init();
 }
 
+#[cfg(feature = "whisper")]
 fn validate_input_file(path: &PathBuf) -> Result<()> {
     if !path.exists() {
         anyhow::bail!("Input file does not exist: {}", path.display());
@@ -144,16 +151,143 @@ fn validate_model(model: &str) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "whisper")]
+fn validate_format(format: &str) -> Result<()> {
+    let valid_formats = vec!["json", "txt", "srt", "vtt", "tsv"];
+    if !valid_formats.contains(&format) {
+        anyhow::bail!(
+            "Invalid format: '{}'. Valid formats: {}",
+            format,
+            valid_formats.join(", ")
+        );
+    }
+    Ok(())
+}
+
+#[cfg(feature = "whisper")]
+/// Format transcription result as JSON
+fn format_json(result: &orangenote_cli::TranscriptionResult) -> Result<String> {
+    serde_json::to_string_pretty(&serde_json::json!({
+        "language": result.language,
+        "segments": result.segments.iter().map(|seg| {
+            serde_json::json!({
+                "id": seg.id,
+                "start": seg.start_time_formatted(),
+                "end": seg.end_time_formatted(),
+                "start_ms": seg.start_ms,
+                "end_ms": seg.end_ms,
+                "text": seg.text,
+                "confidence": seg.confidence,
+            })
+        }).collect::<Vec<_>>()
+    }))
+    .context("Failed to serialize JSON")
+}
+
+#[cfg(feature = "whisper")]
+/// Format transcription result as plain text
+fn format_txt(result: &orangenote_cli::TranscriptionResult) -> String {
+    result
+        .segments
+        .iter()
+        .map(|seg| format!("[{}] {}", seg.start_time_formatted(), seg.text))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(feature = "whisper")]
+/// Format transcription result as SRT (SubRip)
+fn format_srt(result: &orangenote_cli::TranscriptionResult) -> String {
+    result
+        .segments
+        .iter()
+        .map(|seg| {
+            format!(
+                "{}\n{} --> {}\n{}\n",
+                seg.id + 1,
+                format_srt_time(seg.start_ms),
+                format_srt_time(seg.end_ms),
+                seg.text
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(feature = "whisper")]
+/// Format transcription result as VTT (WebVTT)
+fn format_vtt(result: &orangenote_cli::TranscriptionResult) -> String {
+    let mut output = "WEBVTT\n\n".to_string();
+    output.push_str(
+        &result
+            .segments
+            .iter()
+            .map(|seg| {
+                format!(
+                    "{} --> {}\n{}\n",
+                    format_srt_time(seg.start_ms),
+                    format_srt_time(seg.end_ms),
+                    seg.text
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+    output
+}
+
+#[cfg(feature = "whisper")]
+/// Format transcription result as TSV (tab-separated values)
+fn format_tsv(result: &orangenote_cli::TranscriptionResult) -> String {
+    let header = "ID\tStart\tEnd\tStartMS\tEndMS\tConfidence\tText\n";
+    let rows = result
+        .segments
+        .iter()
+        .map(|seg| {
+            format!(
+                "{}\t{}\t{}\t{}\t{}\t{:.3}\t{}",
+                seg.id,
+                seg.start_time_formatted(),
+                seg.end_time_formatted(),
+                seg.start_ms,
+                seg.end_ms,
+                seg.confidence,
+                seg.text
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("{}{}\n", header, rows)
+}
+
+#[cfg(feature = "whisper")]
+/// Format time for SRT/VTT format (HH:MM:SS,mmm)
+fn format_srt_time(ms: i64) -> String {
+    let total_seconds = ms / 1000;
+    let milliseconds = ms % 1000;
+    let seconds = total_seconds % 60;
+    let minutes = (total_seconds / 60) % 60;
+    let hours = total_seconds / 3600;
+
+    format!(
+        "{:02}:{:02}:{:02},{:03}",
+        hours, minutes, seconds, milliseconds
+    )
+}
+
+#[cfg(feature = "whisper")]
 async fn handle_transcribe(
     input: PathBuf,
     model: String,
     language: Option<String>,
     format: String,
     output: Option<PathBuf>,
-    _threads: usize,
+    threads: usize,
+    translate: bool,
 ) -> Result<()> {
     validate_input_file(&input).context("Input file validation failed")?;
     validate_model(&model).context("Model validation failed")?;
+    validate_format(&format).context("Output format validation failed")?;
 
     info!("Starting transcription...");
     info!("Input file: {}", input.display());
@@ -164,6 +298,8 @@ async fn handle_transcribe(
         info!("Language: auto-detect");
     }
     info!("Output format: {}", format);
+    info!("Threads: {}", threads);
+    info!("Translate: {}", translate);
 
     // Step A2: Extract audio metadata using AudioDecoder
     let decoder = AudioDecoder::new(&input).context("Failed to create audio decoder")?;
@@ -178,60 +314,226 @@ async fn handle_transcribe(
     println!("  Size: {}", metadata.file_size_human());
     println!("  {}", metadata.format_info());
 
-    // TODO: Implement actual transcription backend integration
-    println!("\n✓ Transcription pipeline ready!");
-    println!("  Input: {}", input.display());
-    println!("  Model: {}", model);
-    println!(
-        "  Language: {}",
-        language.unwrap_or_else(|| "auto".to_string())
-    );
-    println!("  Output format: {}", format);
-    if let Some(out) = &output {
-        println!("  Output file: {}", out.display());
+    #[cfg(feature = "whisper")]
+    {
+        use orangenote_cli::{ModelSize, WhisperModelManager};
+
+        // Initialize model manager
+        let model_manager =
+            WhisperModelManager::new().context("Failed to initialize model manager")?;
+
+        println!("\n🤖 Initializing transcriber...");
+
+        // Parse model name to ModelSize enum
+        let model_size =
+            ModelSize::from_str(&model).context(format!("Invalid model name: {}", model))?;
+
+        // Create transcriber (will download model if needed)
+        let transcriber = orangenote_cli::WhisperTranscriber::from_model_manager(
+            &model_manager,
+            model_size,
+            threads,
+        )
+        .context("Failed to initialize transcriber")?;
+
+        println!("✓ Transcriber ready (model: {})", model);
+
+        println!("\n🎵 Processing audio...");
+
+        // Transcribe the audio file
+        let result = transcriber
+            .transcribe_file(&input, language.as_deref(), translate)
+            .context("Transcription failed")?;
+
+        println!("✓ Transcription complete!");
+        println!("  Detected language: {}", result.language);
+        println!("  Segments: {}", result.segments.len());
+        println!(
+            "  Average confidence: {:.2}%",
+            result.average_confidence() * 100.0
+        );
+
+        println!("\n📝 Transcription Results:\n");
+
+        // Format the output
+        let formatted_output = match format.as_str() {
+            "json" => format_json(&result).context("Failed to format JSON")?,
+            "txt" => format_txt(&result),
+            "srt" => format_srt(&result),
+            "vtt" => format_vtt(&result),
+            "tsv" => format_tsv(&result),
+            _ => unreachable!(),
+        };
+
+        // Write output
+        if let Some(output_path) = output {
+            std::fs::write(&output_path, &formatted_output)
+                .context("Failed to write output file")?;
+            println!("✓ Output written to: {}", output_path.display());
+        } else {
+            println!("{}", formatted_output);
+        }
+
+        println!("\n✓ Transcription complete!\n");
     }
 
-    println!("\n[Note] Backend integration coming in next steps...\n");
+    #[cfg(not(feature = "whisper"))]
+    {
+        println!("\n❌ Error: Whisper feature not enabled!");
+        println!("Please rebuild with: cargo build --features whisper");
+        anyhow::bail!("Whisper feature not enabled");
+    }
 
     Ok(())
+}
+
+#[cfg(not(feature = "whisper"))]
+async fn handle_transcribe(
+    _input: PathBuf,
+    _model: String,
+    _language: Option<String>,
+    _format: String,
+    _output: Option<PathBuf>,
+    _threads: usize,
+    _translate: bool,
+) -> Result<()> {
+    anyhow::bail!("Whisper feature not enabled. Rebuild with: cargo build --features whisper")
 }
 
 async fn handle_model_list() -> Result<()> {
     info!("Listing available models...");
     println!("Available Whisper models:");
-    println!("  • tiny   (39M)   - Fastest");
-    println!("  • base   (140M)  - Default");
-    println!("  • small  (466M)  - Balanced");
-    println!("  • medium (1.5G)  - Better accuracy");
-    println!("  • large  (2.9G)  - Best accuracy");
+    println!("  • tiny   (39M)   - Fastest, low accuracy");
+    println!("  • base   (140M)  - Default, good balance");
+    println!("  • small  (466M)  - Better accuracy");
+    println!("  • medium (1.5G)  - High accuracy");
+    println!("  • large  (2.9G)  - Highest accuracy");
+
+    #[cfg(feature = "whisper")]
+    {
+        use orangenote_cli::WhisperModelManager;
+
+        let model_manager =
+            WhisperModelManager::new().context("Failed to initialize model manager")?;
+
+        println!("\n📦 Downloaded Models:");
+        let cached = model_manager
+            .list_cached_models()
+            .context("Failed to list cached models")?;
+
+        if cached.is_empty() {
+            println!("  (none)");
+        } else {
+            for model in cached {
+                let path = model_manager.get_model_path(model);
+                if let Ok(metadata) = std::fs::metadata(&path) {
+                    let size_mb = metadata.len() / 1_000_000;
+                    println!("  ✓ {} ({}MB)", model.display_name(), size_mb);
+                } else {
+                    println!("  ✓ {}", model.display_name());
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
-async fn handle_model_download(model: String, force: bool) -> Result<()> {
+async fn handle_model_download(model: String, _force: bool) -> Result<()> {
     validate_model(&model).context("Model validation failed")?;
-    info!("Downloading model: {} (force: {})", model, force);
-    println!(
-        "[CLI Prototype] Model download not yet implemented: {}",
-        model
-    );
-    println!("Force: {}", force);
+
+    #[cfg(feature = "whisper")]
+    {
+        use orangenote_cli::{ModelSize, WhisperModelManager};
+
+        info!("Downloading model: {}", model);
+
+        let model_manager =
+            WhisperModelManager::new().context("Failed to initialize model manager")?;
+
+        // Parse model name
+        let model_size =
+            ModelSize::from_str(&model).context(format!("Invalid model name: {}", model))?;
+
+        println!("📥 Downloading model: {}", model);
+
+        // Check if already cached and not forcing re-download
+        if model_manager.is_cached(model_size) && !_force {
+            println!("✓ Model {} already cached", model);
+        } else {
+            model_manager
+                .download_model(model_size)
+                .context("Failed to download model")?;
+            println!("✓ Model downloaded successfully!");
+        }
+    }
+
+    #[cfg(not(feature = "whisper"))]
+    {
+        let _ = _force; // Suppress unused warning
+        return Err(anyhow::anyhow!("Whisper feature not enabled"));
+    }
+
+    #[cfg(feature = "whisper")]
     Ok(())
 }
 
+#[cfg(feature = "whisper")]
 async fn handle_model_remove(model: String) -> Result<()> {
     validate_model(&model).context("Model validation failed")?;
+
+    use orangenote_cli::{ModelSize, WhisperModelManager};
+
     info!("Removing model: {}", model);
-    println!(
-        "[CLI Prototype] Model removal not yet implemented: {}",
-        model
-    );
+
+    let model_manager = WhisperModelManager::new().context("Failed to initialize model manager")?;
+
+    // Parse model name
+    let model_size =
+        ModelSize::from_str(&model).context(format!("Invalid model name: {}", model))?;
+
+    model_manager
+        .remove_model(model_size)
+        .context("Failed to remove model")?;
+
+    println!("✓ Model '{}' removed successfully!", model);
+
     Ok(())
 }
 
+#[cfg(not(feature = "whisper"))]
+async fn handle_model_remove(model: String) -> Result<()> {
+    let _ = model;
+    anyhow::bail!("Whisper feature not enabled");
+}
+
+#[cfg(feature = "whisper")]
 async fn handle_model_status() -> Result<()> {
     info!("Checking model status...");
-    println!("[CLI Prototype] Model status check not yet implemented");
+
+    use orangenote_cli::WhisperModelManager;
+
+    let model_manager = WhisperModelManager::new().context("Failed to initialize model manager")?;
+
+    let cached = model_manager
+        .list_cached_models()
+        .context("Failed to list cached models")?;
+
+    println!("📊 Model Cache Status:");
+    println!("  Cache directory: {}", model_manager.cache_dir().display());
+    println!("  Downloaded models: {}", cached.len());
+
+    if !cached.is_empty() {
+        let total_size = model_manager.get_cache_size().unwrap_or(0);
+        println!("  Total size: {:.2} MB", total_size as f64);
+    }
+
     Ok(())
+}
+
+#[cfg(not(feature = "whisper"))]
+async fn handle_model_status() -> Result<()> {
+    anyhow::bail!("Whisper feature not enabled");
 }
 
 async fn handle_info() -> Result<()> {
@@ -241,6 +543,13 @@ async fn handle_info() -> Result<()> {
     println!("  • OS: {}", std::env::consts::OS);
     println!("  • Arch: {}", std::env::consts::ARCH);
     println!("  • Family: {}", std::env::consts::FAMILY);
+
+    #[cfg(feature = "whisper")]
+    println!("  • Whisper support: ✓ Enabled");
+
+    #[cfg(not(feature = "whisper"))]
+    println!("  • Whisper support: ✗ Disabled (rebuild with --features whisper)");
+
     Ok(())
 }
 
@@ -260,8 +569,9 @@ async fn main() -> Result<()> {
             format,
             output,
             threads,
+            translate,
         }) => {
-            handle_transcribe(input, model, language, format, output, threads).await?;
+            handle_transcribe(input, model, language, format, output, threads, translate).await?;
         }
         Some(Commands::Model(ModelCommands::List)) => {
             handle_model_list().await?;
