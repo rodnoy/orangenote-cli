@@ -25,6 +25,13 @@ hound = "3.5"
 # Media info via command line as fallback
 which = "5.0"
 
+# Whisper transcription (optional)
+# Using custom FFI bindings instead of whisper-rs crate
+
+[features]
+default = []
+whisper = []
+
 [lib]
 name = "orangenote_cli"
 path = "src/lib.rs"

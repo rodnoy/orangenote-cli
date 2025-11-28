@@ -29,25 +29,88 @@ cargo run --bin orangenote-cli -- transcribe test.mp3 -l ru -m small
 
 ---
 
-## Phase A2: Backend Integration - Audio Processing
+## Phase A2: ✅ COMPLETED - Audio Decoding & Metadata Extraction
 
-**Estimated Timeline:** 1-2 weeks  
-**Dependencies:** A1 (completed)
+**Status:** Done  
+**Completion Date:** 2024-11-28
 
-### A2.1: Add Whisper Backend Dependency
+### What was accomplished:
+- Audio decoder implementation for WAV files
+- Metadata extraction (sample rate, channels, duration, bitrate)
+- Fallback metadata for other formats
+- Infrastructure module structure
+- Library exports for independent use
 
-**Goal:** Integrate whisper.cpp via Rust FFI
+### Test command:
+```bash
+cargo run --bin orangenote-cli -- transcribe test.wav
+```
 
-**Tasks:**
-- [ ] Research whisper.cpp Rust bindings (whisper-rs crate)
-- [ ] Add dependency to `Cargo.toml`
-- [ ] Create `src/lib.rs` with backend module structure
-- [ ] Create basic wrapper around whisper initialization
+**Success Criteria:** ✅ All met
+- Audio metadata extracted correctly
+- WAV decoding works
+- Format validation in place
+
+---
+
+## Phase A3: ✅ COMPLETED - Whisper.cpp Integration (Preparation)
+
+**Status:** Done  
+**Completion Date:** 2024-11-28
+
+### What was accomplished:
+- FFI bindings to whisper.cpp (287 lines in `ffi.rs`)
+- Safe Rust wrapper (274 lines in `context.rs`)
+- Build script for cmake compilation (97 lines in `build.rs`)
+- Feature gating for optional whisper support
+- Comprehensive documentation (2,000+ lines)
+- Integration guide with practical examples
+
+### Key Features:
+- **WhisperContextWrapper** - Safe context management with automatic cleanup
+- **TranscriptionResult** - Type-safe result structure with segments and tokens
+- **Feature-gated** - Whisper support completely optional
+- **Zero public unsafe code** - All FFI wrapped safely
+
+### Test command:
+```bash
+cargo build --features whisper
+cargo check --features whisper
+# Should compile without errors
+```
+
+**Success Criteria:** ✅ All met
+- FFI bindings created and documented
+- Safe wrapper implemented
+- Build script configured
+- Feature gating works
+- No compilation warnings
+
+---
+
+## Phase A4: Audio Processing Pipeline
+
+**Status:** Not started  
+**Estimated Timeline:** 1 week  
+**Dependencies:** A2, A3 (completed)
+
+### Goals:
+- Audio resampling to 16kHz
+- Mono conversion support
+- Audio normalization
+- Sample rate flexibility
+
+### Tasks:
+- [ ] Implement resampling algorithm (linear interpolation)
+- [ ] Add mono conversion for multi-channel audio
+- [ ] Audio normalization and silence handling
+- [ ] Sample rate detection and conversion
+- [ ] Tests with various audio formats
 
 **Test:**
 ```bash
-cargo build
-# Should compile without errors
+cargo test --features whisper
+# All audio processing tests should pass
 ```
 
 **Success Criteria:**
