@@ -1,6 +1,5 @@
 # Rust
 /target/
-Cargo.lock
 **/*.rs.bk
 *.pdb
 
@@ -17,11 +16,11 @@ Cargo.lock
 /dist/
 /build/
 
-# Test outputs
+# Test outputs & Coverage
 *.profraw
 *.profdata
 
-# Audio files for testing
+# Audio files (local testing)
 *.mp3
 *.wav
 *.m4a
@@ -29,10 +28,16 @@ Cargo.lock
 *.ogg
 *.wma
 
-# Model files
+# Model files (large binaries)
 /models/
 *.bin
 *.pb
+*.gguf
+
+# Temporary Reports & Logs
+*_SUMMARY.txt
+*.log
+/tmp/
 
 # Environment
 .env

@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use log::info;
+use orangenote_cli::AudioDecoder;
 use std::path::PathBuf;
 
 /// OrangeNote CLI - Offline audio transcription tool
@@ -164,6 +165,19 @@ async fn handle_transcribe(
     }
     info!("Output format: {}", format);
 
+    // Step A2: Extract audio metadata using AudioDecoder
+    let decoder = AudioDecoder::new(&input).context("Failed to create audio decoder")?;
+    let metadata = decoder
+        .get_metadata()
+        .context("Failed to extract audio metadata")?;
+
+    // Display audio information
+    println!("\n📄 Audio File Information:");
+    println!("  File: {}", input.display());
+    println!("  Format: {}", metadata.format.as_str());
+    println!("  Size: {}", metadata.file_size_human());
+    println!("  {}", metadata.format_info());
+
     // TODO: Implement actual transcription backend integration
     println!("\n✓ Transcription pipeline ready!");
     println!("  Input: {}", input.display());
@@ -176,6 +190,7 @@ async fn handle_transcribe(
     if let Some(out) = &output {
         println!("  Output file: {}", out.display());
     }
+
     println!("\n[Note] Backend integration coming in next steps...\n");
 
     Ok(())

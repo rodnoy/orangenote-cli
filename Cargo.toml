@@ -1,6 +1,6 @@
 [package]
 name = "orangenote-cli"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["OrangeNote Team"]
 description = "CLI tool for audio transcription using whisper.cpp"
@@ -16,6 +16,18 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 log = "0.4"
 env_logger = "0.11"
+
+# Audio metadata extraction
+metaflac = "0.2"
+mp3-metadata = "0.3"
+hound = "3.5"
+
+# Media info via command line as fallback
+which = "5.0"
+
+[lib]
+name = "orangenote_cli"
+path = "src/lib.rs"
 
 [[bin]]
 name = "orangenote-cli"
