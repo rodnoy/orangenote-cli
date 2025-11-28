@@ -27,10 +27,15 @@ which = "5.0"
 
 # Whisper transcription (optional)
 # Using custom FFI bindings instead of whisper-rs crate
+reqwest = { version = "0.11", features = ["stream"], optional = true }
+indicatif = { version = "0.17", optional = true }
+futures = { version = "0.3", optional = true }
+sha2 = "0.10"
+hex = "0.4"
 
 [features]
 default = []
-whisper = []
+whisper = ["reqwest", "indicatif", "futures"]
 
 [lib]
 name = "orangenote_cli"

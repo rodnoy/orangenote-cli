@@ -7,4 +7,7 @@
 pub mod whisper;
 
 #[cfg(feature = "whisper")]
-pub use whisper::{Segment, Token, TranscriptionResult, WhisperContextWrapper};
+pub use whisper::{
+    ModelSize, ModelSource, Segment, Token, TranscriptionResult, WhisperContextWrapper,
+    WhisperModelManager,
+};

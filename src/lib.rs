@@ -8,7 +8,10 @@ pub mod infrastructure;
 pub use infrastructure::audio::{AudioDecoder, AudioFormat, AudioMetadata};
 
 #[cfg(feature = "whisper")]
-pub use infrastructure::{Segment, Token, TranscriptionResult, WhisperContextWrapper};
+pub use infrastructure::{
+    ModelSize, ModelSource, Segment, Token, TranscriptionResult, WhisperContextWrapper,
+    WhisperModelManager,
+};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

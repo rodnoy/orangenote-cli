@@ -9,4 +9,7 @@ pub mod audio;
 pub mod transcription;
 
 #[cfg(feature = "whisper")]
-pub use transcription::{Segment, Token, TranscriptionResult, WhisperContextWrapper};
+pub use transcription::{
+    ModelSize, ModelSource, Segment, Token, TranscriptionResult, WhisperContextWrapper,
+    WhisperModelManager,
+};

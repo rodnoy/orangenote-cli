@@ -1,7 +1,7 @@
 //! Whisper.cpp transcription backend
 //!
 //! This module provides integration with whisper.cpp for audio transcription.
-//! It includes FFI bindings, safe wrappers, and high-level transcription APIs.
+//! It includes FFI bindings, safe wrappers, model management, and high-level transcription APIs.
 //!
 //! # Feature Gate
 //!
@@ -9,7 +9,7 @@
 //!
 //! ```toml
 //! [features]
-//! whisper = ["whisper-rs"]
+//! whisper = ["reqwest", "indicatif"]
 //! ```
 
 #[cfg(feature = "whisper")]
@@ -19,4 +19,10 @@ pub mod ffi;
 pub mod context;
 
 #[cfg(feature = "whisper")]
+pub mod model_manager;
+
+#[cfg(feature = "whisper")]
 pub use context::{Segment, Token, TranscriptionResult, WhisperContextWrapper};
+
+#[cfg(feature = "whisper")]
+pub use model_manager::{ModelSize, ModelSource, WhisperModelManager};
