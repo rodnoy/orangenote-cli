@@ -1,0 +1,26 @@
+[package]
+name = "orangenote-cli"
+version = "0.1.0"
+edition = "2021"
+authors = ["OrangeNote Team"]
+description = "CLI tool for audio transcription using whisper.cpp"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+tokio = { version = "1.35", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+log = "0.4"
+env_logger = "0.11"
+
+[[bin]]
+name = "orangenote-cli"
+path = "src/bin/orangenote-cli.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
