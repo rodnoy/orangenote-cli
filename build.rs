@@ -182,6 +182,8 @@ fn build_from_submodule(whisper_dir: &PathBuf) -> bool {
         .arg("-DCMAKE_BUILD_TYPE=Release")
         .arg("-DBUILD_SHARED_LIBS=OFF")
         .arg("-DWHISPER_CPP_ONLY=ON")
+        .arg("-DGGML_OPENMP=OFF")
+        .arg("-DWHISPER_NO_OPENMP=ON")
         .arg(&abs_whisper_dir);
 
     let cmake_output = cmake_configure_cmd.output();
@@ -275,7 +277,56 @@ fn build_from_submodule(whisper_dir: &PathBuf) -> bool {
     );
     println!("cargo:warning=Linking with built whisper.cpp");
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
+
+    // Also add ggml library paths
+    let ggml_dir = build_dir.join("ggml").join("src");
+    let ggml_metal_dir = ggml_dir.join("ggml-metal");
+    let ggml_blas_dir = ggml_dir.join("ggml-blas");
+
+    if ggml_dir.exists() {
+        println!("cargo:rustc-link-search=native={}", ggml_dir.display());
+    }
+    if ggml_metal_dir.exists() {
+        println!(
+            "cargo:rustc-link-search=native={}",
+            ggml_metal_dir.display()
+        );
+    }
+    if ggml_blas_dir.exists() {
+        println!("cargo:rustc-link-search=native={}", ggml_blas_dir.display());
+    }
+
+    // Link whisper and ggml libraries in correct order (dependencies last)
     println!("cargo:rustc-link-lib=static=whisper");
+    println!("cargo:rustc-link-lib=static=ggml");
+    println!("cargo:rustc-link-lib=static=ggml-base");
+    println!("cargo:rustc-link-lib=static=ggml-cpu");
+
+    // Link optional ggml backends if they exist
+    if ggml_metal_dir.join("libggml-metal.a").exists() {
+        println!("cargo:rustc-link-lib=static=ggml-metal");
+    }
+    if ggml_blas_dir.join("libggml-blas.a").exists() {
+        println!("cargo:rustc-link-lib=static=ggml-blas");
+    }
+
+    // Link C++ standard library
+    #[cfg(target_os = "macos")]
+    {
+        println!("cargo:rustc-link-lib=c++");
+        // Link Apple frameworks required by whisper.cpp
+        println!("cargo:rustc-link-lib=framework=Accelerate");
+        println!("cargo:rustc-link-lib=framework=Foundation");
+        println!("cargo:rustc-link-lib=framework=Metal");
+        println!("cargo:rustc-link-lib=framework=MetalKit");
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        println!("cargo:rustc-link-lib=stdc++");
+        println!("cargo:rustc-link-lib=m");
+        println!("cargo:rustc-link-lib=pthread");
+    }
 
     true
 }

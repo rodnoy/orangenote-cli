@@ -228,14 +228,14 @@ extern "C" {
     /// Get segment text
     pub fn whisper_full_get_segment_text(ctx: *mut WhisperContext, i: c_int) -> *const c_char;
 
-    /// Get segment start time in milliseconds
+    /// Get segment start time in centiseconds (100ths of a second)
     pub fn whisper_full_get_segment_t0(ctx: *mut WhisperContext, i: c_int) -> i64;
 
-    /// Get segment end time in milliseconds
+    /// Get segment end time in centiseconds (100ths of a second)
     pub fn whisper_full_get_segment_t1(ctx: *mut WhisperContext, i: c_int) -> i64;
 
-    /// Get segment probability
-    pub fn whisper_full_get_segment_p(ctx: *mut WhisperContext, i: c_int) -> c_float;
+    /// Get segment no-speech probability (higher = more likely silence/noise)
+    pub fn whisper_full_get_segment_no_speech_prob(ctx: *mut WhisperContext, i: c_int) -> c_float;
 
     /// Get number of tokens in segment
     pub fn whisper_full_n_tokens(ctx: *mut WhisperContext, i: c_int) -> c_int;
@@ -267,12 +267,6 @@ extern "C" {
         i_segment: c_int,
         i_token: c_int,
     ) -> c_float;
-
-    /// Convert timestamp in 100-millisecond units to milliseconds
-    pub fn whisper_full_get_segment_t0_ms(ctx: *mut WhisperContext, i: c_int) -> i64;
-
-    /// Convert timestamp in 100-millisecond units to milliseconds
-    pub fn whisper_full_get_segment_t1_ms(ctx: *mut WhisperContext, i: c_int) -> i64;
 
     /// Get language ID detected
     pub fn whisper_full_lang_id(ctx: *mut WhisperContext) -> c_int;

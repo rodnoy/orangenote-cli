@@ -135,9 +135,13 @@ impl WhisperContextWrapper {
                     CStr::from_ptr(text_ptr).to_string_lossy().to_string()
                 };
 
-                let t0 = ffi::whisper_full_get_segment_t0_ms(self.ctx, i);
-                let t1 = ffi::whisper_full_get_segment_t1_ms(self.ctx, i);
-                let p = ffi::whisper_full_get_segment_p(self.ctx, i);
+                // t0 and t1 are in centiseconds (100ths of a second), convert to milliseconds
+                let t0 = ffi::whisper_full_get_segment_t0(self.ctx, i) * 10;
+                let t1 = ffi::whisper_full_get_segment_t1(self.ctx, i) * 10;
+                // no_speech_prob is inverted - higher means more likely silence
+                // so confidence = 1.0 - no_speech_prob
+                let no_speech_prob = ffi::whisper_full_get_segment_no_speech_prob(self.ctx, i);
+                let p = 1.0 - no_speech_prob;
                 let n_tokens = ffi::whisper_full_n_tokens(self.ctx, i);
 
                 let mut tokens = Vec::new();
