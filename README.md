@@ -11,6 +11,7 @@ A fast, offline audio transcription tool using whisper.cpp. Transcribe audio fil
 - 💾 **Output Formats** — JSON, SRT, VTT, TXT, TSV
 - 🔌 **Modular Design** — Easy integration with other applications
 - 📦 **Offline-First** — All processing happens locally
+- ✂️ **Audio Chunking** — Split long files for better transcription quality
 
 ## Quick Start
 
@@ -25,7 +26,7 @@ A fast, offline audio transcription tool using whisper.cpp. Transcribe audio fil
 ```bash
 git clone <repo-url>
 cd orangenote-cli
-cargo build --release
+cargo build --release --features whisper
 ```
 
 The binary will be in `target/release/orangenote-cli`
@@ -34,19 +35,19 @@ The binary will be in `target/release/orangenote-cli`
 
 ```bash
 # Transcribe with default settings
-cargo run --bin orangenote-cli -- transcribe input.mp3
+./orangenote-cli transcribe input.mp3
 
 # With specific language
-cargo run --bin orangenote-cli -- transcribe input.mp3 --language ru
+./orangenote-cli transcribe input.mp3 --language ru
 
 # With different model (tiny, base, small, medium, large)
-cargo run --bin orangenote-cli -- transcribe input.mp3 --model small
+./orangenote-cli transcribe input.mp3 --model small
 
 # Save to file
-cargo run --bin orangenote-cli -- transcribe input.mp3 --output result.json
+./orangenote-cli transcribe input.mp3 --output result.json
 
 # As SRT subtitles
-cargo run --bin orangenote-cli -- transcribe video.m4a --format srt -o subs.srt
+./orangenote-cli transcribe video.m4a --format srt -o subs.srt
 ```
 
 ## Commands
@@ -58,74 +59,180 @@ orangenote-cli transcribe <INPUT> [OPTIONS]
 ```
 
 **Options:**
-- `-m, --model` — Whisper model (tiny, base, small, medium, large) — default: base
-- `-l, --language` — Language code (en, ru, fr, etc.) or 'auto' — default: auto
-- `-f, --format` — Output format (json, srt, vtt, txt, tsv) — default: json
-- `-o, --output` — Output file (stdout if not specified)
-- `-t, --threads` — Processing threads — default: 4
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-m, --model` | Whisper model (tiny, base, small, medium, large) | base |
+| `-l, --language` | Language code (en, ru, fr, etc.) or auto-detect | auto |
+| `-f, --format` | Output format (json, srt, vtt, txt, tsv) | json |
+| `-o, --output` | Output file (stdout if not specified) | - |
+| `-t, --threads` | Processing threads | 4 |
+| `--translate` | Translate to English | false |
+| `--chunk-size` | Chunk size in minutes (0 = disabled) | 0 |
+| `--chunk-overlap` | Overlap between chunks in seconds | 5 |
 
 ### Model Management
 
 ```bash
 # List available models
-cargo run --bin orangenote-cli -- model list
+./orangenote-cli model list
 
 # Download a model
-cargo run --bin orangenote-cli -- model download base
+./orangenote-cli model download medium
 
 # Check model status
-cargo run --bin orangenote-cli -- model status
+./orangenote-cli model status
+
+# Remove a model
+./orangenote-cli model remove base
 ```
 
 ### System Info
 
 ```bash
-cargo run --bin orangenote-cli -- info
+./orangenote-cli info
+```
+
+## Audio Chunking for Long Files
+
+When transcribing long audio files (podcasts, lectures, meetings), whisper.cpp may produce poor results — repeating noise labels like "[Music]" or hallucinating text. The solution is to split audio into smaller chunks.
+
+### How It Works
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                    Original Audio File                      │
+└────────────────────────────────────────────────────────────┘
+                              ↓
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│   Chunk 1    │  │   Chunk 2    │  │   Chunk 3    │
+│   0:00-5:00  │  │  4:55-9:55   │  │  9:50-12:00  │
+└──────────────┘  └──────────────┘  └──────────────┘
+        ↓                 ↓                 ↓
+   Transcribe        Transcribe        Transcribe
+        ↓                 ↓                 ↓
+┌────────────────────────────────────────────────────────────┐
+│           Merged Result (duplicates removed)                │
+└────────────────────────────────────────────────────────────┘
+```
+
+### Usage
+
+```bash
+# Transcribe a 1-hour podcast with 5-minute chunks
+./orangenote-cli transcribe podcast.mp3 \
+  --model medium \
+  --language ru \
+  --chunk-size 5
+
+# With custom overlap (10 seconds)
+./orangenote-cli transcribe lecture.mp3 \
+  --model small \
+  --chunk-size 10 \
+  --chunk-overlap 10
+
+# Long meeting recording
+./orangenote-cli transcribe meeting.wav \
+  --model medium \
+  --language en \
+  --chunk-size 5 \
+  --output meeting_transcript.json
+```
+
+### Recommendations
+
+| Audio Duration | Recommended Chunk Size | Model |
+|----------------|------------------------|-------|
+| < 10 minutes | No chunking needed | base/small |
+| 10-30 minutes | 5 minutes | small/medium |
+| 30-60 minutes | 5-10 minutes | medium |
+| > 1 hour | 5 minutes | medium/large |
+
+### Output Example
+
+```
+🎵 Processing audio...
+  📦 Using chunked transcription (5 min chunks, 5s overlap)
+  Processing chunk 1/12...
+  Processing chunk 2/12...
+  ...
+  Processing chunk 12/12...
+✓ Transcription complete!
+  Detected language: ru
+  Segments: 156
+  Average confidence: 94.32%
 ```
 
 ## Model Comparison
 
-| Model | Size | Speed | Accuracy | RAM |
-|-------|------|-------|----------|-----|
-| tiny | 39M | ⭐⭐⭐⭐⭐ | ⭐ | ~500MB |
-| base | 140M | ⭐⭐⭐⭐ | ⭐⭐ | ~1GB |
-| small | 466M | ⭐⭐⭐ | ⭐⭐⭐ | ~2GB |
-| medium | 1.5G | ⭐⭐ | ⭐⭐⭐⭐ | ~5GB |
-| large | 2.9G | ⭐ | ⭐⭐⭐⭐⭐ | ~10GB |
+| Model | Size | Speed | Accuracy | RAM | Best For |
+|-------|------|-------|----------|-----|----------|
+| tiny | 39M | ⭐⭐⭐⭐⭐ | ⭐ | ~500MB | Quick tests |
+| base | 140M | ⭐⭐⭐⭐ | ⭐⭐ | ~1GB | Short clips |
+| small | 466M | ⭐⭐⭐ | ⭐⭐⭐ | ~2GB | General use |
+| medium | 1.5G | ⭐⭐ | ⭐⭐⭐⭐ | ~5GB | Quality transcription |
+| large | 2.9G | ⭐ | ⭐⭐⭐⭐⭐ | ~10GB | Maximum accuracy |
+
+**Recommendation:** Use `small` or `medium` model with `--language` flag for best results.
 
 ## Output Formats
 
-- **JSON** — Full structured output with timestamps
+- **JSON** — Full structured output with timestamps and confidence scores
 - **SRT** — SubRip format for video players
 - **VTT** — WebVTT format for web videos
-- **TXT** — Plain text (text only)
+- **TXT** — Plain text (text only, no timestamps)
 - **TSV** — Tab-separated for spreadsheets
 
 ## Examples
 
-### Transcribe Russian audio quickly
+### Transcribe Russian podcast
 
 ```bash
-cargo run --bin orangenote-cli -- transcribe podcast.mp3 -m small -l ru -o transcript.json
+./orangenote-cli transcribe podcast.mp3 \
+  --model medium \
+  --language ru \
+  --chunk-size 5 \
+  --output transcript.json
 ```
 
 ### Create video subtitles
 
 ```bash
-cargo run --bin orangenote-cli -- transcribe movie.m4a -f srt -o subtitles.srt
+./orangenote-cli transcribe movie.m4a \
+  --model small \
+  --format srt \
+  --output subtitles.srt
 ```
 
-### High-accuracy transcription
+### High-accuracy English transcription
 
 ```bash
-cargo run --bin orangenote-cli -- transcribe meeting.wav -m large -l en -t 8 -o result.json
+./orangenote-cli transcribe interview.wav \
+  --model large \
+  --language en \
+  --threads 8 \
+  --chunk-size 5 \
+  --output interview.json
+```
+
+### Translate French to English
+
+```bash
+./orangenote-cli transcribe french_audio.mp3 \
+  --model medium \
+  --language fr \
+  --translate \
+  --output english_translation.txt
 ```
 
 ### Batch processing
 
 ```bash
 for file in *.mp3; do
-  cargo run --bin orangenote-cli -- transcribe "$file" -m small -o "${file%.mp3}.json"
+  ./orangenote-cli transcribe "$file" \
+    --model small \
+    --chunk-size 5 \
+    --output "${file%.mp3}.json"
 done
 ```
 
@@ -135,13 +242,26 @@ Enable detailed logging:
 
 ```bash
 # Verbose mode (debug level)
-cargo run --bin orangenote-cli -- transcribe input.mp3 --verbose
+./orangenote-cli transcribe input.mp3 --verbose
 
 # Specific log level
-cargo run --bin orangenote-cli -- transcribe input.mp3 --log-level debug
+./orangenote-cli transcribe input.mp3 --log-level debug
 ```
 
 ## Troubleshooting
+
+### "[Music]" or repeated noise labels
+
+Use chunking with a smaller chunk size:
+```bash
+./orangenote-cli transcribe audio.mp3 --model medium --chunk-size 5
+```
+
+### Poor transcription quality
+
+1. Use a larger model (`medium` or `large`)
+2. Specify the language explicitly with `--language`
+3. Enable chunking for long files
 
 ### File not found
 
@@ -154,37 +274,44 @@ ls -la your_file.mp3
 
 Convert the file first (requires ffmpeg):
 ```bash
-ffmpeg -i input.ogg -q:a 9 output.mp3
+ffmpeg -i input.ogg -ar 16000 -ac 1 output.wav
 ```
 
 ### Out of memory
 
 Use a smaller model:
 ```bash
-cargo run --bin orangenote-cli -- transcribe audio.mp3 -m tiny
+./orangenote-cli transcribe audio.mp3 --model tiny
 ```
 
 ### Slow performance
 
-Increase threads and use smaller model:
-```bash
-cargo run --bin orangenote-cli -- transcribe audio.mp3 -m tiny -t 16
-```
+1. Increase threads: `--threads 8`
+2. Use a smaller model: `--model small`
+3. Use chunking to process in parallel (future feature)
 
 ## Project Status
 
-**Current Version:** 0.1.0 (Alpha)
+**Current Version:** 0.2.0
 
-### Roadmap
+### Implemented Features
 
 - [x] Basic CLI structure
 - [x] Argument parsing and validation
-- [ ] Whisper backend integration
-- [ ] Model management
-- [ ] Diarization support
+- [x] Whisper backend integration
+- [x] Model management (download, list, remove)
+- [x] Multiple output formats (JSON, SRT, VTT, TXT, TSV)
+- [x] Audio chunking for long files
+- [x] Duplicate segment removal
+- [x] Confidence-based segment selection
+
+### Roadmap
+
+- [ ] Diarization support (speaker identification)
 - [ ] Result caching
 - [ ] REST API
 - [ ] Desktop UI (Tauri)
+- [ ] Parallel chunk processing
 
 ## Documentation
 
@@ -202,6 +329,19 @@ rustup update
 rustup component add rustfmt clippy
 ```
 
+### Build
+
+```bash
+# Debug build
+cargo build --features whisper
+
+# Release build
+cargo build --release --features whisper
+
+# Run tests
+cargo test --features whisper
+```
+
 ### Code Quality
 
 ```bash
@@ -209,10 +349,10 @@ rustup component add rustfmt clippy
 cargo fmt
 
 # Lint
-cargo clippy
+cargo clippy --features whisper
 
-# Run tests
-cargo test
+# Run all tests
+cargo test --features whisper
 ```
 
 ### Project Structure
@@ -220,12 +360,25 @@ cargo test
 ```
 orangenote-cli/
 ├── src/
-│   └── bin/
-│       └── orangenote-cli.rs     # Main CLI binary
-├── doc/                           # Documentation
-│   └── README_RU.md              # Russian documentation
-├── Cargo.toml                     # Project manifest
-└── .gitignore                     # Git configuration
+│   ├── lib.rs                    # Library exports
+│   ├── bin/
+│   │   └── orangenote-cli.rs     # Main CLI binary
+│   └── infrastructure/
+│       ├── audio/
+│       │   ├── chunk.rs          # Audio chunking
+│       │   ├── decoder.rs        # Audio decoding
+│       │   └── processor.rs      # Audio processing
+│       └── transcription/
+│           └── whisper/
+│               ├── transcriber.rs # Main transcription engine
+│               ├── merger.rs      # Result merging
+│               ├── context.rs     # Whisper context wrapper
+│               └── model_manager.rs # Model management
+├── vendor/
+│   └── whisper.cpp/              # Whisper.cpp submodule
+├── doc/                          # Documentation
+├── Cargo.toml                    # Project manifest
+└── build.rs                      # Build script for whisper.cpp
 ```
 
 ## Contributing
@@ -242,15 +395,8 @@ Contributions are welcome! Please:
 
 MIT License - see [LICENSE](LICENSE) file for details
 
-## Support
-
-- 🐛 **Issues:** [GitHub Issues](https://github.com/orangenote/orangenote-cli/issues)
-- 💬 **Discussions:** [GitHub Discussions](https://github.com/orangenote/orangenote-cli/discussions)
-- 📧 **Email:** support@orangenote.org
-
 ## See Also
 
-- [OrangeNote Desktop](https://github.com/orangenote/orangenote-desktop) — Tauri-based UI
 - [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — Underlying transcription engine
 - [OpenAI Whisper](https://github.com/openai/whisper) — Original model and paper
 

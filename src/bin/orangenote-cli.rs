@@ -327,6 +327,7 @@ fn format_srt_time(ms: i64) -> String {
 }
 
 #[cfg(feature = "whisper")]
+#[allow(clippy::too_many_arguments)]
 async fn handle_transcribe(
     input: PathBuf,
     model: String,
