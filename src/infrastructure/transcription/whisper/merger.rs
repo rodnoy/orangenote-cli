@@ -3,7 +3,7 @@
 //! This module handles merging transcription results from multiple audio chunks,
 //! including timestamp adjustment and deduplication of overlapping segments.
 
-use super::context::{Segment, Token, TranscriptionResult};
+use super::context::{Segment, TranscriptionResult};
 use log::{debug, info};
 use std::collections::{HashMap, HashSet};
 
@@ -147,6 +147,7 @@ pub fn merge_transcription_results(
 #[derive(Debug, Clone)]
 struct SegmentWithMeta {
     segment: Segment,
+    #[allow(dead_code)] // May be used for debugging or future enhancements
     chunk_index: usize,
     _original_start_ms: i64,
 }
@@ -178,6 +179,21 @@ fn deduplicate_segments(
     let mut result: Vec<SegmentWithMeta> = Vec::with_capacity(segments.len());
 
     for current in segments {
+        // First, check if we should replace an existing segment with higher confidence
+        // This must come before duplicate detection to allow better versions to replace worse ones
+        if config.prefer_higher_confidence {
+            if let Some(idx) = find_replaceable_segment(&result, &current, config) {
+                debug!(
+                    "Replacing segment at {}ms with higher confidence version ({:.2} -> {:.2})",
+                    result[idx].segment.start_ms,
+                    result[idx].segment.confidence,
+                    current.segment.confidence
+                );
+                result[idx] = current;
+                continue;
+            }
+        }
+
         // Check if this segment is a duplicate of any recent segment
         let is_duplicate = result
             .iter()
@@ -192,20 +208,6 @@ fn deduplicate_segments(
                 truncate_text(&current.segment.text, 50)
             );
             continue;
-        }
-
-        // Check if we should replace an existing segment with higher confidence
-        if config.prefer_higher_confidence {
-            if let Some(idx) = find_replaceable_segment(&result, &current, config) {
-                debug!(
-                    "Replacing segment at {}ms with higher confidence version ({:.2} -> {:.2})",
-                    result[idx].segment.start_ms,
-                    result[idx].segment.confidence,
-                    current.segment.confidence
-                );
-                result[idx] = current;
-                continue;
-            }
         }
 
         result.push(current);

@@ -360,8 +360,6 @@ impl WhisperTranscriber {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_empty_samples() {
         // This test would require a valid model, so we skip it in basic tests
