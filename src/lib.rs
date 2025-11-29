@@ -6,7 +6,8 @@
 pub mod infrastructure;
 
 pub use infrastructure::audio::{
-    AudioDecoder, AudioFormat, AudioMetadata, AudioProcessor, AudioSamples, WHISPER_SAMPLE_RATE,
+    AudioChunk, AudioDecoder, AudioFormat, AudioMetadata, AudioProcessor, AudioSamples,
+    ChunkConfig, WHISPER_SAMPLE_RATE,
 };
 
 #[cfg(feature = "whisper")]

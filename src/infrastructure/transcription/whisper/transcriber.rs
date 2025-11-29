@@ -4,7 +4,8 @@
 //! audio processing and transcription using whisper.cpp.
 
 use super::context::TranscriptionResult;
-use crate::infrastructure::audio::AudioProcessor;
+use super::merger::{merge_transcription_results, MergeConfig};
+use crate::infrastructure::audio::{AudioChunk, AudioProcessor, ChunkConfig};
 use anyhow::{anyhow, Context, Result};
 use log::{debug, info};
 use std::path::Path;
@@ -123,6 +124,149 @@ impl WhisperTranscriber {
 
         // Step 2: Transcribe the samples
         self.transcribe_samples(&audio_samples.samples, language, translate)
+    }
+
+    /// Transcribe an audio file with chunking support for long files
+    ///
+    /// This method splits long audio files into smaller chunks, transcribes each
+    /// separately, and merges the results. This helps avoid whisper.cpp issues
+    /// with very long audio files (hallucinations, repeated noise labels).
+    ///
+    /// # Arguments
+    ///
+    /// * `audio_path` - Path to the audio file
+    /// * `language` - Optional language code (e.g., "en", "ru"). None for auto-detect
+    /// * `translate` - Whether to translate to English
+    /// * `chunk_config` - Configuration for chunking (duration, overlap)
+    /// * `progress_callback` - Callback for progress updates (current_chunk, total_chunks)
+    ///
+    /// # Returns
+    ///
+    /// Result containing the merged transcription result with corrected timestamps
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let config = ChunkConfig {
+    ///     chunk_duration_secs: 300, // 5 minutes
+    ///     overlap_secs: 5,
+    /// };
+    /// let result = transcriber.transcribe_file_chunked(
+    ///     "long_podcast.mp3",
+    ///     Some("en"),
+    ///     false,
+    ///     &config,
+    ///     |current, total| println!("Processing chunk {}/{}", current + 1, total),
+    /// )?;
+    /// ```
+    pub fn transcribe_file_chunked<P, F>(
+        &self,
+        audio_path: P,
+        language: Option<&str>,
+        translate: bool,
+        chunk_config: &ChunkConfig,
+        progress_callback: F,
+    ) -> Result<TranscriptionResult>
+    where
+        P: AsRef<Path>,
+        F: Fn(usize, usize),
+    {
+        let audio_path = audio_path.as_ref();
+        info!(
+            "Transcribing audio file with chunking: {} (chunk_size={}s, overlap={}s)",
+            audio_path.display(),
+            chunk_config.chunk_duration_secs,
+            chunk_config.overlap_secs
+        );
+
+        // Step 1: Process audio file to PCM samples
+        let audio_samples =
+            AudioProcessor::process(audio_path).context("Failed to process audio file")?;
+
+        debug!(
+            "Audio processing complete: {} samples, duration: {:.1}s",
+            audio_samples.samples.len(),
+            audio_samples.duration_seconds
+        );
+
+        // Step 2: Split into chunks
+        let chunks = audio_samples.split_into_chunks(chunk_config);
+        let total_chunks = chunks.len();
+
+        if total_chunks == 0 {
+            return Err(anyhow!("No audio chunks generated"));
+        }
+
+        info!(
+            "Split audio into {} chunks ({:.1}s each, {}s overlap)",
+            total_chunks, chunk_config.chunk_duration_secs, chunk_config.overlap_secs
+        );
+
+        // Step 3: Transcribe each chunk
+        let mut chunk_results: Vec<(TranscriptionResult, i64)> = Vec::with_capacity(total_chunks);
+
+        for chunk in chunks {
+            progress_callback(chunk.index, total_chunks);
+
+            debug!(
+                "Transcribing chunk {}/{}: {} samples, offset {}ms",
+                chunk.index + 1,
+                total_chunks,
+                chunk.samples.len(),
+                chunk.start_offset_ms
+            );
+
+            let result = self
+                .transcribe_chunk(&chunk, language, translate)
+                .with_context(|| format!("Failed to transcribe chunk {}", chunk.index))?;
+
+            chunk_results.push((result, chunk.start_offset_ms));
+        }
+
+        // Step 4: Merge results using the merger module
+        let merge_config = MergeConfig::from_overlap_secs(chunk_config.overlap_secs);
+        let merge_result = merge_transcription_results(chunk_results, merge_config);
+
+        info!(
+            "Chunked transcription complete: {} segments (removed {} duplicates), language: {}",
+            merge_result.result.segments.len(),
+            merge_result.duplicates_removed,
+            merge_result.result.language
+        );
+
+        Ok(merge_result.result)
+    }
+
+    /// Transcribe a single audio chunk
+    ///
+    /// # Arguments
+    ///
+    /// * `chunk` - Audio chunk with samples and metadata
+    /// * `language` - Optional language code. None for auto-detect
+    /// * `translate` - Whether to translate to English
+    ///
+    /// # Returns
+    ///
+    /// Result containing the transcription result (timestamps are relative to chunk start)
+    pub fn transcribe_chunk(
+        &self,
+        chunk: &AudioChunk,
+        language: Option<&str>,
+        translate: bool,
+    ) -> Result<TranscriptionResult> {
+        if chunk.samples.is_empty() {
+            return Err(anyhow!("Empty audio chunk provided"));
+        }
+
+        debug!(
+            "Transcribing chunk {}: {} samples ({:.1}s)",
+            chunk.index,
+            chunk.samples.len(),
+            chunk.duration_ms as f64 / 1000.0
+        );
+
+        // Transcribe the chunk's samples
+        self.transcribe_samples(&chunk.samples, language, translate)
     }
 
     /// Transcribe PCM samples directly

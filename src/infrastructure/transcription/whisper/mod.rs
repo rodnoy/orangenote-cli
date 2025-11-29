@@ -19,6 +19,9 @@ pub mod ffi;
 pub mod context;
 
 #[cfg(feature = "whisper")]
+pub mod merger;
+
+#[cfg(feature = "whisper")]
 pub mod model_manager;
 
 #[cfg(feature = "whisper")]
@@ -26,6 +29,9 @@ pub mod transcriber;
 
 #[cfg(feature = "whisper")]
 pub use context::{Segment, Token, TranscriptionResult, WhisperContextWrapper};
+
+#[cfg(feature = "whisper")]
+pub use merger::{merge_transcription_results, MergeConfig, MergeResult};
 
 #[cfg(feature = "whisper")]
 pub use model_manager::{ModelSize, ModelSource, WhisperModelManager};

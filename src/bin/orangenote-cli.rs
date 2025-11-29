@@ -56,6 +56,15 @@ enum Commands {
         /// Translate to English
         #[arg(long)]
         translate: bool,
+
+        /// Chunk size in minutes for long audio files (0 = no chunking)
+        /// Recommended: 5-10 minutes for optimal transcription quality
+        #[arg(long, default_value = "0", value_name = "MINUTES")]
+        chunk_size: u32,
+
+        /// Overlap between chunks in seconds (helps maintain context at boundaries)
+        #[arg(long, default_value = "5", value_name = "SECONDS")]
+        chunk_overlap: u32,
     },
 
     /// Manage transcription models
@@ -148,6 +157,48 @@ fn validate_model(model: &str) -> Result<()> {
             valid_models.join(", ")
         );
     }
+    Ok(())
+}
+
+/// Validate chunk configuration parameters
+#[cfg(feature = "whisper")]
+fn validate_chunk_config(chunk_size: u32, chunk_overlap: u32) -> Result<()> {
+    // chunk_size = 0 means no chunking, which is valid
+    if chunk_size == 0 {
+        return Ok(());
+    }
+
+    // Minimum chunk size is 1 minute
+    if chunk_size < 1 {
+        anyhow::bail!(
+            "Chunk size must be at least 1 minute (got {} minutes). Use 0 to disable chunking.",
+            chunk_size
+        );
+    }
+
+    // Convert chunk_size to seconds for comparison
+    let chunk_size_secs = chunk_size * 60;
+
+    // Overlap must be less than chunk size
+    if chunk_overlap >= chunk_size_secs {
+        anyhow::bail!(
+            "Chunk overlap ({} seconds) must be less than chunk size ({} seconds = {} minutes)",
+            chunk_overlap,
+            chunk_size_secs,
+            chunk_size
+        );
+    }
+
+    // Warn if overlap is more than 50% of chunk size
+    if chunk_overlap > chunk_size_secs / 2 {
+        log::warn!(
+            "Large overlap ({} seconds) may cause excessive processing. \
+             Consider using overlap <= {} seconds (50% of chunk size).",
+            chunk_overlap,
+            chunk_size_secs / 2
+        );
+    }
+
     Ok(())
 }
 
@@ -284,10 +335,13 @@ async fn handle_transcribe(
     output: Option<PathBuf>,
     threads: usize,
     translate: bool,
+    chunk_size: u32,
+    chunk_overlap: u32,
 ) -> Result<()> {
     validate_input_file(&input).context("Input file validation failed")?;
     validate_model(&model).context("Model validation failed")?;
     validate_format(&format).context("Output format validation failed")?;
+    validate_chunk_config(chunk_size, chunk_overlap).context("Chunk config validation failed")?;
 
     info!("Starting transcription...");
     info!("Input file: {}", input.display());
@@ -300,6 +354,15 @@ async fn handle_transcribe(
     info!("Output format: {}", format);
     info!("Threads: {}", threads);
     info!("Translate: {}", translate);
+
+    if chunk_size > 0 {
+        info!(
+            "Chunking: {} minute chunks with {} second overlap",
+            chunk_size, chunk_overlap
+        );
+    } else {
+        info!("Chunking: disabled");
+    }
 
     // Step A2: Extract audio metadata using AudioDecoder
     let decoder = AudioDecoder::new(&input).context("Failed to create audio decoder")?;
@@ -341,10 +404,36 @@ async fn handle_transcribe(
 
         println!("\n🎵 Processing audio...");
 
-        // Transcribe the audio file
-        let result = transcriber
-            .transcribe_file(&input, language.as_deref(), translate)
-            .context("Transcription failed")?;
+        // Transcribe - with or without chunking
+        let result = if chunk_size > 0 {
+            use orangenote_cli::ChunkConfig;
+
+            let config = ChunkConfig {
+                chunk_duration_secs: chunk_size * 60,
+                overlap_secs: chunk_overlap,
+            };
+
+            println!(
+                "  📦 Using chunked transcription ({} min chunks, {}s overlap)",
+                chunk_size, chunk_overlap
+            );
+
+            transcriber
+                .transcribe_file_chunked(
+                    &input,
+                    language.as_deref(),
+                    translate,
+                    &config,
+                    |current, total| {
+                        println!("  Processing chunk {}/{}...", current + 1, total);
+                    },
+                )
+                .context("Chunked transcription failed")?
+        } else {
+            transcriber
+                .transcribe_file(&input, language.as_deref(), translate)
+                .context("Transcription failed")?
+        };
 
         println!("✓ Transcription complete!");
         println!("  Detected language: {}", result.language);
@@ -397,6 +486,8 @@ async fn handle_transcribe(
     _output: Option<PathBuf>,
     _threads: usize,
     _translate: bool,
+    _chunk_size: u32,
+    _chunk_overlap: u32,
 ) -> Result<()> {
     anyhow::bail!("Whisper feature not enabled. Rebuild with: cargo build --features whisper")
 }
@@ -572,8 +663,21 @@ async fn main() -> Result<()> {
             output,
             threads,
             translate,
+            chunk_size,
+            chunk_overlap,
         }) => {
-            handle_transcribe(input, model, language, format, output, threads, translate).await?;
+            handle_transcribe(
+                input,
+                model,
+                language,
+                format,
+                output,
+                threads,
+                translate,
+                chunk_size,
+                chunk_overlap,
+            )
+            .await?;
         }
         Some(Commands::Model(ModelCommands::List)) => {
             handle_model_list().await?;
