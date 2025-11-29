@@ -199,10 +199,8 @@ impl AudioProcessor {
             .sample_rate
             .ok_or_else(|| anyhow!("Sample rate unknown"))?;
 
-        let channels = codec_params
-            .channels
-            .ok_or_else(|| anyhow!("Channel count unknown"))?
-            .count() as u16;
+        // Channel count may be unknown for some M4A files - we'll detect from first packet
+        let channels_from_params = codec_params.channels.map(|c| c.count() as u16);
 
         let duration_frames = codec_params.n_frames.unwrap_or(0);
         let original_duration_seconds = if original_sample_rate > 0 {
@@ -212,8 +210,8 @@ impl AudioProcessor {
         };
 
         debug!(
-            "Audio info: {}Hz, {} channels, {:.1}s",
-            original_sample_rate, channels, original_duration_seconds
+            "Audio info: {}Hz, channels={:?}, {:.1}s",
+            original_sample_rate, channels_from_params, original_duration_seconds
         );
 
         // Create decoder
@@ -224,6 +222,7 @@ impl AudioProcessor {
         // Decode all samples
         let mut all_samples = Vec::new();
         let mut decoder = decoder;
+        let mut detected_channels: Option<u16> = channels_from_params;
 
         loop {
             match format.next_packet() {
@@ -231,6 +230,12 @@ impl AudioProcessor {
                     Ok(decoded) => {
                         let spec = decoded.spec();
                         let channels_in_spec = spec.channels.count();
+
+                        // Detect channels from first decoded packet if not known
+                        if detected_channels.is_none() {
+                            detected_channels = Some(channels_in_spec as u16);
+                            info!("Detected {} channels from decoded audio", channels_in_spec);
+                        }
 
                         debug!(
                             "Packet decoded: {} frames, {} channels in spec",
@@ -270,6 +275,8 @@ impl AudioProcessor {
         if all_samples.is_empty() {
             return Err(anyhow!("No audio samples decoded"));
         }
+
+        let channels = detected_channels.unwrap_or(2); // Default to stereo if still unknown
 
         info!(
             "Decoded {} samples from {} channels at {}Hz",
