@@ -107,7 +107,7 @@ impl ModelSource {
 
     /// Construct full download URL for a model
     pub fn download_url(&self, model: ModelSize) -> String {
-        format!("{}/models/{}", self.base_url, model.filename())
+        format!("{}/{}", self.base_url, model.filename())
     }
 }
 
@@ -173,7 +173,7 @@ impl WhisperModelManager {
     ///
     /// Returns the path to the model file. If the model is already cached,
     /// returns the path immediately. Otherwise, downloads it first.
-    pub fn get_or_download(&self, model: ModelSize) -> Result<PathBuf> {
+    pub async fn get_or_download(&self, model: ModelSize) -> Result<PathBuf> {
         let model_path = self.get_model_path(model);
 
         // Return cached model if it exists and is valid
@@ -183,14 +183,14 @@ impl WhisperModelManager {
         }
 
         // Download the model
-        self.download_model(model)?;
+        self.download_model(model).await?;
 
         Ok(model_path)
     }
 
-    /// Download a model from the configured source
+    /// Download a model from the configured source (async version)
     #[cfg(feature = "whisper")]
-    pub fn download_model(&self, model: ModelSize) -> Result<()> {
+    pub async fn download_model(&self, model: ModelSize) -> Result<()> {
         // Ensure cache directory exists
         fs::create_dir_all(&self.cache_dir).context("Failed to create model cache directory")?;
 
@@ -204,15 +204,12 @@ impl WhisperModelManager {
             self.source.name
         );
 
-        // Create a runtime for async operations
-        let rt = tokio::runtime::Runtime::new().context("Failed to create async runtime")?;
-
-        rt.block_on(async { self.download_model_async(&url, &model_path, model).await })
+        self.download_model_impl(&url, &model_path, model).await
     }
 
-    /// Download a model asynchronously (async implementation)
+    /// Download a model implementation (async)
     #[cfg(feature = "whisper")]
-    async fn download_model_async(
+    async fn download_model_impl(
         &self,
         url: &str,
         destination: &Path,

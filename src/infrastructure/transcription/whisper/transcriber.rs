@@ -68,7 +68,7 @@ impl WhisperTranscriber {
     /// # Returns
     ///
     /// Result containing the initialized transcriber
-    pub fn from_model_manager(
+    pub async fn from_model_manager(
         model_manager: &WhisperModelManager,
         model_size: ModelSize,
         threads: usize,
@@ -80,6 +80,7 @@ impl WhisperTranscriber {
 
         let model_path = model_manager
             .get_or_download(model_size)
+            .await
             .context("Failed to get model")?;
 
         Self::new(model_path, threads)
@@ -148,16 +149,18 @@ impl WhisperTranscriber {
         info!("Starting transcription of {} samples", samples.len());
 
         // Configure transcription parameters
-        let mut params = unsafe {
-            super::ffi::whisper_full_default_params(super::ffi::WHISPER_SAMPLING_GREEDY as i32)
-        };
+        let mut params =
+            unsafe { super::ffi::whisper_full_default_params(super::ffi::WHISPER_SAMPLING_GREEDY) };
 
         params.n_threads = self.threads as i32;
-        params.translate = translate as i32;
-        params.print_progress = 0;
-        params.print_realtime = 0;
-        params.print_timestamps = 1;
-        params.token_timestamps = 1;
+        params.translate = translate;
+        params.print_progress = false;
+        params.print_realtime = false;
+        params.print_timestamps = true;
+        params.token_timestamps = true;
+
+        // Disable VAD to avoid requiring VAD model
+        params.vad = false;
 
         // Set language if provided
         let lang_c_string;

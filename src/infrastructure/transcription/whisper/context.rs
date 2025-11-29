@@ -85,13 +85,16 @@ impl WhisperContextWrapper {
         language: Option<&str>,
         translate: bool,
     ) -> Result<TranscriptionResult> {
-        let mut params = unsafe { ffi::whisper_full_default_params(0) };
+        let mut params = unsafe { ffi::whisper_full_default_params(ffi::WHISPER_SAMPLING_GREEDY) };
 
-        params.translate = translate as i32;
-        params.print_progress = 0;
-        params.print_realtime = 0;
-        params.print_timestamps = 1;
-        params.token_timestamps = 1;
+        params.translate = translate;
+        params.print_progress = false;
+        params.print_realtime = false;
+        params.print_timestamps = true;
+        params.token_timestamps = true;
+
+        // Disable VAD to avoid requiring VAD model
+        params.vad = false;
 
         // Set language if provided
         let lang_c_string;

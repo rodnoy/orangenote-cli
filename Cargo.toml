@@ -26,7 +26,7 @@ hound = "3.5"
 which = "5.0"
 
 # Audio decoding and resampling
-symphonia = { version = "0.5", features = ["default"] }
+symphonia = { version = "0.5", features = ["all"] }
 
 # Whisper transcription (optional)
 # Using custom FFI bindings instead of whisper-rs crate

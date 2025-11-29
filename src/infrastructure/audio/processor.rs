@@ -124,6 +124,12 @@ impl AudioProcessor {
                         let spec = decoded.spec();
                         let channels_in_spec = spec.channels.count();
 
+                        debug!(
+                            "Packet decoded: {} frames, {} channels in spec",
+                            decoded.frames(),
+                            channels_in_spec
+                        );
+
                         match decoded {
                             symphonia::core::audio::AudioBufferRef::F32(buf) => {
                                 Self::extract_f32_samples(&buf, channels_in_spec, &mut all_samples);
@@ -164,13 +170,46 @@ impl AudioProcessor {
             original_sample_rate
         );
 
-        // Convert to mono if stereo/multi-channel
+        // Debug: Check sample range
+        if !all_samples.is_empty() {
+            let min_val = all_samples.iter().cloned().fold(f32::INFINITY, f32::min);
+            let max_val = all_samples
+                .iter()
+                .cloned()
+                .fold(f32::NEG_INFINITY, f32::max);
+            let sum: f32 = all_samples.iter().sum();
+            let mean = sum / all_samples.len() as f32;
+            let rms =
+                (all_samples.iter().map(|x| x * x).sum::<f32>() / all_samples.len() as f32).sqrt();
+            info!(
+                "Sample stats: min={:.4}, max={:.4}, mean={:.4}, rms={:.4}",
+                min_val, max_val, mean, rms
+            );
+
+            // Warn if samples are outside expected range or very quiet
+            if min_val < -1.0 || max_val > 1.0 {
+                info!("WARNING: Samples outside normalized range [-1.0, 1.0]");
+            }
+            if rms < 0.001 {
+                info!("WARNING: Audio appears to be very quiet (RMS < 0.001)");
+            }
+        }
+
+        // Convert to mono if multi-channel
+        // Data is stored as interleaved: [L0, R0, L1, R1, ...]
         let mono_samples = if channels > 1 {
-            debug!("Converting {} channels to mono", channels);
+            info!("Converting {} channels to mono", channels);
             Self::to_mono(&all_samples, channels as usize)
         } else {
             all_samples
         };
+
+        info!(
+            "After mono conversion: {} samples (was {} with {} channels)",
+            mono_samples.len(),
+            mono_samples.len() * channels as usize,
+            channels
+        );
 
         // Resample to 16kHz if needed
         let resampled_samples = if original_sample_rate != WHISPER_SAMPLE_RATE {
@@ -186,12 +225,36 @@ impl AudioProcessor {
 
         let duration_seconds = resampled_samples.len() as f64 / WHISPER_SAMPLE_RATE as f64;
 
-        info!(
-            "Final audio: {} samples at {}Hz ({:.1}s)",
-            resampled_samples.len(),
-            WHISPER_SAMPLE_RATE,
-            duration_seconds
-        );
+        // Debug: Check final sample range after resampling
+        if !resampled_samples.is_empty() {
+            let min_val = resampled_samples
+                .iter()
+                .cloned()
+                .fold(f32::INFINITY, f32::min);
+            let max_val = resampled_samples
+                .iter()
+                .cloned()
+                .fold(f32::NEG_INFINITY, f32::max);
+            let rms = (resampled_samples.iter().map(|x| x * x).sum::<f32>()
+                / resampled_samples.len() as f32)
+                .sqrt();
+            info!(
+                "Final audio: {} samples at {}Hz ({:.1}s), range=[{:.4}, {:.4}], rms={:.4}",
+                resampled_samples.len(),
+                WHISPER_SAMPLE_RATE,
+                duration_seconds,
+                min_val,
+                max_val,
+                rms
+            );
+        } else {
+            info!(
+                "Final audio: {} samples at {}Hz ({:.1}s)",
+                resampled_samples.len(),
+                WHISPER_SAMPLE_RATE,
+                duration_seconds
+            );
+        }
 
         Ok(AudioSamples {
             samples: resampled_samples,
@@ -201,7 +264,7 @@ impl AudioProcessor {
         })
     }
 
-    /// Extract f32 samples from buffer and mix to mono
+    /// Extract f32 samples from buffer as interleaved multi-channel data
     fn extract_f32_samples(
         buf: &symphonia::core::audio::AudioBuffer<f32>,
         channels: usize,
@@ -209,22 +272,16 @@ impl AudioProcessor {
     ) {
         let frames = buf.frames();
 
-        if channels == 1 {
-            // Already mono
-            out.extend_from_slice(buf.chan(0));
-        } else {
-            // Mix channels to mono
-            for frame in 0..frames {
-                let mut sample = 0.0f32;
-                for ch in 0..channels {
-                    sample += buf.chan(ch)[frame];
-                }
-                out.push(sample / channels as f32);
+        // Store samples as interleaved: [L0, R0, L1, R1, ...]
+        // This allows proper mono conversion later
+        for frame in 0..frames {
+            for ch in 0..channels {
+                out.push(buf.chan(ch)[frame]);
             }
         }
     }
 
-    /// Extract s16 samples from buffer and convert to f32, mix to mono
+    /// Extract s16 samples from buffer and convert to f32 as interleaved data
     fn extract_s16_samples(
         buf: &symphonia::core::audio::AudioBuffer<i16>,
         channels: usize,
@@ -233,24 +290,15 @@ impl AudioProcessor {
         let frames = buf.frames();
         const S16_MAX: f32 = 32767.0;
 
-        if channels == 1 {
-            // Already mono
-            for &sample in buf.chan(0) {
-                out.push(sample as f32 / S16_MAX);
-            }
-        } else {
-            // Mix channels to mono
-            for frame in 0..frames {
-                let mut sample = 0.0f32;
-                for ch in 0..channels {
-                    sample += buf.chan(ch)[frame] as f32;
-                }
-                out.push(sample / (channels as f32 * S16_MAX));
+        // Store samples as interleaved: [L0, R0, L1, R1, ...]
+        for frame in 0..frames {
+            for ch in 0..channels {
+                out.push(buf.chan(ch)[frame] as f32 / S16_MAX);
             }
         }
     }
 
-    /// Extract u8 samples from buffer and convert to f32, mix to mono
+    /// Extract u8 samples from buffer and convert to f32 as interleaved data
     fn extract_u8_samples(
         buf: &symphonia::core::audio::AudioBuffer<u8>,
         channels: usize,
@@ -258,21 +306,11 @@ impl AudioProcessor {
     ) {
         let frames = buf.frames();
 
-        if channels == 1 {
-            // Already mono
-            for &sample in buf.chan(0) {
+        // Store samples as interleaved: [L0, R0, L1, R1, ...]
+        for frame in 0..frames {
+            for ch in 0..channels {
                 // Convert from [0, 255] to [-1.0, 1.0]
-                out.push((sample as f32 - 128.0) / 128.0);
-            }
-        } else {
-            // Mix channels to mono
-            for frame in 0..frames {
-                let mut sample = 0.0f32;
-                for ch in 0..channels {
-                    let s = buf.chan(ch)[frame] as f32 - 128.0;
-                    sample += s;
-                }
-                out.push(sample / (channels as f32 * 128.0));
+                out.push((buf.chan(ch)[frame] as f32 - 128.0) / 128.0);
             }
         }
     }

@@ -8,6 +8,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+#![allow(dead_code)]
 
 use std::os::raw::{c_char, c_float, c_int, c_void};
 
@@ -21,133 +22,150 @@ pub type WhisperState = c_void;
 pub type WhisperToken = i32;
 
 /// Sampling strategy constants
-pub const WHISPER_SAMPLING_GREEDY: u32 = 0;
-pub const WHISPER_SAMPLING_BEAM_SEARCH: u32 = 1;
+pub const WHISPER_SAMPLING_GREEDY: c_int = 0;
+pub const WHISPER_SAMPLING_BEAM_SEARCH: c_int = 1;
 
-/// Whisper sampling parameters
+/// Greedy sampling parameters
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
+pub struct WhisperGreedyParams {
+    pub best_of: c_int,
+}
+
+/// Beam search sampling parameters
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct WhisperBeamSearchParams {
+    pub beam_size: c_int,
+    pub patience: c_float,
+}
+
+/// VAD parameters
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct WhisperVadParams {
+    pub threshold: c_float,
+    pub min_speech_duration_ms: c_int,
+    pub min_silence_duration_ms: c_int,
+    pub max_speech_duration_s: c_float,
+    pub speech_pad_ms: c_int,
+    pub samples_overlap: c_float,
+}
+
+/// Grammar element (opaque)
+pub type WhisperGrammarElement = c_void;
+
+/// Callback types
+pub type WhisperNewSegmentCallback =
+    Option<extern "C" fn(*mut WhisperContext, *mut WhisperState, c_int, *mut c_void)>;
+pub type WhisperProgressCallback =
+    Option<extern "C" fn(*mut WhisperContext, *mut WhisperState, c_int, *mut c_void)>;
+pub type WhisperEncoderBeginCallback =
+    Option<extern "C" fn(*mut WhisperContext, *mut WhisperState, *mut c_void) -> bool>;
+pub type WhisperAbortCallback = Option<extern "C" fn(*mut c_void) -> bool>;
+pub type WhisperLogitsFilterCallback = Option<
+    extern "C" fn(
+        *mut WhisperContext,
+        *mut WhisperState,
+        *const WhisperTokenData,
+        c_int,
+        *mut c_float,
+        *mut c_void,
+    ),
+>;
+
+/// Whisper full params structure - must match whisper.cpp exactly
+/// Based on whisper.cpp v1.7+
+#[repr(C)]
+#[derive(Clone)]
 pub struct WhisperFullParams {
-    /// Strategy for sampling (0 = greedy, 1 = beam search)
     pub strategy: c_int,
 
-    /// Number of threads to use for decoding
     pub n_threads: c_int,
-
-    /// Maximum number of text tokens to generate per audio chunk
     pub n_max_text_ctx: c_int,
-
-    /// Offset in seconds from the start of the audio
     pub offset_ms: c_int,
-
-    /// Duration in milliseconds of audio to process (0 = to end)
     pub duration_ms: c_int,
 
-    /// Translate to English
-    pub translate: c_int,
+    pub translate: bool,
+    pub no_context: bool,
+    pub no_timestamps: bool,
+    pub single_segment: bool,
+    pub print_special: bool,
+    pub print_progress: bool,
+    pub print_realtime: bool,
+    pub print_timestamps: bool,
 
-    /// Don't use past transcripts as a guide
-    pub no_context: c_int,
-
-    /// Use past transcripts as a guide
-    pub single_segment: c_int,
-
-    /// Print special tokens
-    pub print_special: c_int,
-
-    /// Print progress
-    pub print_progress: c_int,
-
-    /// Print results from within `whisper_full`
-    pub print_realtime: c_int,
-
-    /// Print timestamps for each token
-    pub print_timestamps: c_int,
-
-    /// Token-level timestamps
-    pub token_timestamps: c_int,
-
-    /// Threshold for token-level timestamps (0.0 - 1.0, lower = get more timestamps)
+    // Token-level timestamps
+    pub token_timestamps: bool,
     pub thold_pt: c_float,
-
-    /// Threshold for segment-level timestamps (0.0 - 1.0, lower = get more timestamps)
     pub thold_ptsum: c_float,
-
-    /// Maximum number of samples in a chunk (0 = disabled)
     pub max_len: c_int,
-
-    /// Split on spaces
-    pub split_on_word: c_int,
-
-    /// Max tokens per segment from the last split point
+    pub split_on_word: bool,
     pub max_tokens: c_int,
 
-    /// Language to use (ISO-639-1 code or NULL for auto-detect)
-    pub language: *const c_char,
+    // Speed-up techniques
+    pub debug_mode: bool,
+    pub audio_ctx: c_int,
 
-    /// Initial prompt
+    // Tinydiarize
+    pub tdrz_enable: bool,
+
+    // Suppress regex
+    pub suppress_regex: *const c_char,
+
+    // Initial prompt
     pub initial_prompt: *const c_char,
+    pub carry_initial_prompt: bool,
+    pub prompt_tokens: *const WhisperToken,
+    pub prompt_n_tokens: c_int,
 
-    /// Callback function for progress
-    pub progress_callback: Option<extern "C" fn(c_int, *mut c_void)>,
+    // Language
+    pub language: *const c_char,
+    pub detect_language: bool,
 
-    /// Progress callback context
+    // Decoding parameters
+    pub suppress_blank: bool,
+    pub suppress_nst: bool,
+
+    pub temperature: c_float,
+    pub max_initial_ts: c_float,
+    pub length_penalty: c_float,
+
+    // Fallback parameters
+    pub temperature_inc: c_float,
+    pub entropy_thold: c_float,
+    pub logprob_thold: c_float,
+    pub no_speech_thold: c_float,
+
+    pub greedy: WhisperGreedyParams,
+    pub beam_search: WhisperBeamSearchParams,
+
+    // Callbacks
+    pub new_segment_callback: WhisperNewSegmentCallback,
+    pub new_segment_callback_user_data: *mut c_void,
+
+    pub progress_callback: WhisperProgressCallback,
     pub progress_callback_user_data: *mut c_void,
-}
 
-impl Default for WhisperFullParams {
-    fn default() -> Self {
-        Self {
-            strategy: 0,
-            n_threads: 4,
-            n_max_text_ctx: 16384,
-            offset_ms: 0,
-            duration_ms: 0,
-            translate: 0,
-            no_context: 0,
-            single_segment: 0,
-            print_special: 0,
-            print_progress: 1,
-            print_realtime: 0,
-            print_timestamps: 0,
-            token_timestamps: 0,
-            thold_pt: 0.01,
-            thold_ptsum: 0.01,
-            max_len: 0,
-            split_on_word: 0,
-            max_tokens: 0,
-            language: std::ptr::null(),
-            initial_prompt: std::ptr::null(),
-            progress_callback: None,
-            progress_callback_user_data: std::ptr::null_mut(),
-        }
-    }
-}
+    pub encoder_begin_callback: WhisperEncoderBeginCallback,
+    pub encoder_begin_callback_user_data: *mut c_void,
 
-/// Result from segment transcription
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct WhisperSegment {
-    /// Segment index
-    pub id: i32,
+    pub abort_callback: WhisperAbortCallback,
+    pub abort_callback_user_data: *mut c_void,
 
-    /// Start time in 100-millisecond units
-    pub t0: i64,
+    pub logits_filter_callback: WhisperLogitsFilterCallback,
+    pub logits_filter_callback_user_data: *mut c_void,
 
-    /// End time in 100-millisecond units
-    pub t1: i64,
+    // Grammar
+    pub grammar_rules: *const *const WhisperGrammarElement,
+    pub n_grammar_rules: usize,
+    pub i_start_rule: usize,
+    pub grammar_penalty: c_float,
 
-    /// Text content
-    pub text: *const c_char,
-
-    /// Number of tokens in this segment
-    pub n_tokens: i32,
-
-    /// Token data pointer (for advanced usage)
-    pub tokens: *const c_void,
-
-    /// Probability of this being spoken
-    pub p: c_float,
+    // VAD
+    pub vad: bool,
+    pub vad_model_path: *const c_char,
+    pub vad_params: WhisperVadParams,
 }
 
 /// Token data
@@ -163,8 +181,8 @@ pub struct WhisperTokenData {
     /// Probability
     pub p: c_float,
 
-    /// Cumulative sum of probabilities
-    pub psum: c_float,
+    /// Log probability
+    pub plog: c_float,
 
     /// Probability of being voiced vs unvoiced
     pub pt: c_float,
@@ -172,14 +190,17 @@ pub struct WhisperTokenData {
     /// Cumulative sum of pt
     pub ptsum: c_float,
 
-    /// Timestamp in 100-millisecond units
+    /// Timestamp start
     pub t0: i64,
 
-    /// Timestamp in 100-millisecond units
+    /// Timestamp end
     pub t1: i64,
 
-    /// Duration in 100-millisecond units
-    pub tid_vprob: c_float,
+    /// DTW timestamp
+    pub t_dtw: i64,
+
+    /// Voice length
+    pub vlen: c_float,
 }
 
 // Link against whisper library when feature is enabled
@@ -221,9 +242,6 @@ extern "C" {
 
     /// Get number of segments
     pub fn whisper_full_n_segments(ctx: *mut WhisperContext) -> c_int;
-
-    /// Get segment by index
-    pub fn whisper_full_get_segment(ctx: *mut WhisperContext, i: c_int) -> WhisperSegment;
 
     /// Get segment text
     pub fn whisper_full_get_segment_text(ctx: *mut WhisperContext, i: c_int) -> *const c_char;
@@ -284,5 +302,5 @@ extern "C" {
     pub fn whisper_state_free(state: *mut WhisperState);
 
     /// Print system information
-    pub fn whisper_print_system_info();
+    pub fn whisper_print_system_info() -> *const c_char;
 }

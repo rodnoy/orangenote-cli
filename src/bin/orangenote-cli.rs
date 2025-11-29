@@ -334,6 +334,7 @@ async fn handle_transcribe(
             model_size,
             threads,
         )
+        .await
         .context("Failed to initialize transcriber")?;
 
         println!("✓ Transcriber ready (model: {})", model);
@@ -463,6 +464,7 @@ async fn handle_model_download(model: String, _force: bool) -> Result<()> {
         } else {
             model_manager
                 .download_model(model_size)
+                .await
                 .context("Failed to download model")?;
             println!("✓ Model downloaded successfully!");
         }
