@@ -1,0 +1,236 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Apple Silicon
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact_name: orangenote-cli
+            asset_name: orangenote-cli-${{ github.ref_name }}-aarch64-apple-darwin
+
+          # macOS Intel
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact_name: orangenote-cli
+            asset_name: orangenote-cli-${{ github.ref_name }}-x86_64-apple-darwin
+
+          # Linux x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: orangenote-cli
+            asset_name: orangenote-cli-${{ github.ref_name }}-x86_64-unknown-linux-gnu
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake clang libclang-dev
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Build release binary
+        run: |
+          cargo build --release --features whisper --target ${{ matrix.target }}
+
+      - name: Create tarball (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czvf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
+          cd ../../..
+          shasum -a 256 ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: |
+            ${{ matrix.asset_name }}.tar.gz
+            ${{ matrix.asset_name }}.tar.gz.sha256
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.sha256" \) -exec cp {} release-assets/ \;
+          ls -la release-assets/
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # Extract changelog for this version
+          if [ -f CHANGELOG.md ]; then
+            # Get content between version headers
+            awk '/^## \['"$VERSION"'\]/{flag=1; next} /^## \[/{flag=0} flag' CHANGELOG.md > release_notes.md
+            if [ ! -s release_notes.md ]; then
+              echo "Release $VERSION" > release_notes.md
+            fi
+          else
+            echo "Release $VERSION" > release_notes.md
+          fi
+
+          echo "" >> release_notes.md
+          echo "## Installation" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### macOS (Homebrew)" >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "brew tap rodnoy/orangenote" >> release_notes.md
+          echo "brew install orangenote-cli" >> release_notes.md
+          echo '```' >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Manual Installation" >> release_notes.md
+          echo "Download the appropriate archive for your platform and extract:" >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "tar -xzf orangenote-cli-*.tar.gz" >> release_notes.md
+          echo "sudo mv orangenote-cli /usr/local/bin/" >> release_notes.md
+          echo '```' >> release_notes.md
+          echo "" >> release_notes.md
+          echo "## SHA256 Checksums" >> release_notes.md
+          echo '```' >> release_notes.md
+          cat release-assets/*.sha256 >> release_notes.md
+          echo '```' >> release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: OrangeNote CLI ${{ steps.release_notes.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          files: release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-homebrew:
+    name: Update Homebrew Formula
+    needs: release
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.ref_name, 'alpha') && !contains(github.ref_name, 'beta') && !contains(github.ref_name, 'rc') }}
+
+    steps:
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: rodnoy/homebrew-orangenote
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Download artifacts for SHA256
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Update formula
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+
+          # Get SHA256 values
+          ARM_SHA256=$(cat artifacts/orangenote-cli-${GITHUB_REF_NAME}-aarch64-apple-darwin/orangenote-cli-${GITHUB_REF_NAME}-aarch64-apple-darwin.tar.gz.sha256 | awk '{print $1}')
+          INTEL_SHA256=$(cat artifacts/orangenote-cli-${GITHUB_REF_NAME}-x86_64-apple-darwin/orangenote-cli-${GITHUB_REF_NAME}-x86_64-apple-darwin.tar.gz.sha256 | awk '{print $1}')
+
+          # Create updated formula
+          cat > homebrew-tap/Formula/orangenote-cli.rb << EOF
+          class OrangenoteCli < Formula
+            desc "CLI tool for audio transcription using Whisper AI (offline)"
+            homepage "https://github.com/rodnoy/orangenote-cli"
+            version "$VERSION"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/rodnoy/orangenote-cli/releases/download/${GITHUB_REF_NAME}/orangenote-cli-${GITHUB_REF_NAME}-aarch64-apple-darwin.tar.gz"
+                sha256 "$ARM_SHA256"
+              end
+              on_intel do
+                url "https://github.com/rodnoy/orangenote-cli/releases/download/${GITHUB_REF_NAME}/orangenote-cli-${GITHUB_REF_NAME}-x86_64-apple-darwin.tar.gz"
+                sha256 "$INTEL_SHA256"
+              end
+            end
+
+            def install
+              bin.install "orangenote-cli"
+            end
+
+            def caveats
+              <<~EOS
+                To use orangenote-cli, download a Whisper model first:
+                  orangenote-cli model download base
+
+                For better accuracy (especially for non-English languages):
+                  orangenote-cli model download medium
+
+                Available models: tiny, base, small, medium, large
+              EOS
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/orangenote-cli --version")
+            end
+          end
+          EOF
+
+      - name: Commit and push formula update
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/orangenote-cli.rb
+          git commit -m "Update orangenote-cli to ${GITHUB_REF_NAME}"
+          git push

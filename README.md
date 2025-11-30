@@ -2,6 +2,38 @@
 
 A fast, offline audio transcription tool using whisper.cpp. Transcribe audio files to text without internet or cloud services.
 
+## Installation
+
+### macOS (Homebrew) — Recommended
+
+```bash
+brew tap rodnoy/orangenote
+brew install orangenote-cli
+```
+
+### From Source
+
+```bash
+git clone https://github.com/rodnoy/orangenote-cli.git
+cd orangenote-cli
+cargo build --release --features whisper
+sudo ln -sf $(pwd)/target/release/orangenote-cli /usr/local/bin/
+```
+
+### Download Binary
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/rodnoy/orangenote-cli/releases):
+
+- `orangenote-cli-*-aarch64-apple-darwin.tar.gz` — macOS Apple Silicon (M1/M2/M3/M4)
+- `orangenote-cli-*-x86_64-apple-darwin.tar.gz` — macOS Intel
+- `orangenote-cli-*-x86_64-unknown-linux-gnu.tar.gz` — Linux x86_64
+
+```bash
+# Example: macOS Apple Silicon
+tar -xzf orangenote-cli-v0.2.0-aarch64-apple-darwin.tar.gz
+sudo mv orangenote-cli /usr/local/bin/
+```
+
 ## Features
 
 - 🎙️ **Audio Transcription** — Convert speech to text accurately
@@ -15,39 +47,36 @@ A fast, offline audio transcription tool using whisper.cpp. Transcribe audio fil
 
 ## Quick Start
 
-### Prerequisites
-
-- Rust 1.70+ ([install](https://rustup.rs/))
-- 4+ GB RAM
-- macOS, Linux, or Windows
-
-### Build from Source
+After installation, download a Whisper model:
 
 ```bash
-git clone <repo-url>
-cd orangenote-cli
-cargo build --release --features whisper
-```
+# Download base model (140MB, good balance)
+orangenote-cli model download base
 
-The binary will be in `target/release/orangenote-cli`
+# Or medium for better accuracy (1.5GB)
+orangenote-cli model download medium
+```
 
 ### Basic Usage
 
 ```bash
 # Transcribe with default settings
-./orangenote-cli transcribe input.mp3
+orangenote-cli transcribe input.mp3
 
 # With specific language
-./orangenote-cli transcribe input.mp3 --language ru
+orangenote-cli transcribe input.mp3 --language ru
 
 # With different model (tiny, base, small, medium, large)
-./orangenote-cli transcribe input.mp3 --model small
+orangenote-cli transcribe input.mp3 --model small
 
 # Save to file
-./orangenote-cli transcribe input.mp3 --output result.json
+orangenote-cli transcribe input.mp3 --output result.json
 
 # As SRT subtitles
-./orangenote-cli transcribe video.m4a --format srt -o subs.srt
+orangenote-cli transcribe video.m4a --format srt -o subs.srt
+
+# Long podcast with chunking (recommended for >30 min)
+orangenote-cli transcribe podcast.mp3 --chunk-size 5 --model medium
 ```
 
 ## Commands
@@ -75,22 +104,22 @@ orangenote-cli transcribe <INPUT> [OPTIONS]
 
 ```bash
 # List available models
-./orangenote-cli model list
+orangenote-cli model list
 
 # Download a model
-./orangenote-cli model download medium
+orangenote-cli model download medium
 
 # Check model status
-./orangenote-cli model status
+orangenote-cli model status
 
 # Remove a model
-./orangenote-cli model remove base
+orangenote-cli model remove base
 ```
 
 ### System Info
 
 ```bash
-./orangenote-cli info
+orangenote-cli info
 ```
 
 ## Audio Chunking for Long Files
@@ -120,19 +149,19 @@ When transcribing long audio files (podcasts, lectures, meetings), whisper.cpp m
 
 ```bash
 # Transcribe a 1-hour podcast with 5-minute chunks
-./orangenote-cli transcribe podcast.mp3 \
+orangenote-cli transcribe podcast.mp3 \
   --model medium \
   --language ru \
   --chunk-size 5
 
 # With custom overlap (10 seconds)
-./orangenote-cli transcribe lecture.mp3 \
+orangenote-cli transcribe lecture.mp3 \
   --model small \
   --chunk-size 10 \
   --chunk-overlap 10
 
 # Long meeting recording
-./orangenote-cli transcribe meeting.wav \
+orangenote-cli transcribe meeting.wav \
   --model medium \
   --language en \
   --chunk-size 5 \
@@ -188,7 +217,7 @@ When transcribing long audio files (podcasts, lectures, meetings), whisper.cpp m
 ### Transcribe Russian podcast
 
 ```bash
-./orangenote-cli transcribe podcast.mp3 \
+orangenote-cli transcribe podcast.mp3 \
   --model medium \
   --language ru \
   --chunk-size 5 \
@@ -198,7 +227,7 @@ When transcribing long audio files (podcasts, lectures, meetings), whisper.cpp m
 ### Create video subtitles
 
 ```bash
-./orangenote-cli transcribe movie.m4a \
+orangenote-cli transcribe movie.m4a \
   --model small \
   --format srt \
   --output subtitles.srt
@@ -207,7 +236,7 @@ When transcribing long audio files (podcasts, lectures, meetings), whisper.cpp m
 ### High-accuracy English transcription
 
 ```bash
-./orangenote-cli transcribe interview.wav \
+orangenote-cli transcribe interview.wav \
   --model large \
   --language en \
   --threads 8 \
@@ -218,7 +247,7 @@ When transcribing long audio files (podcasts, lectures, meetings), whisper.cpp m
 ### Translate French to English
 
 ```bash
-./orangenote-cli transcribe french_audio.mp3 \
+orangenote-cli transcribe french_audio.mp3 \
   --model medium \
   --language fr \
   --translate \
@@ -229,7 +258,7 @@ When transcribing long audio files (podcasts, lectures, meetings), whisper.cpp m
 
 ```bash
 for file in *.mp3; do
-  ./orangenote-cli transcribe "$file" \
+  orangenote-cli transcribe "$file" \
     --model small \
     --chunk-size 5 \
     --output "${file%.mp3}.json"
@@ -242,10 +271,10 @@ Enable detailed logging:
 
 ```bash
 # Verbose mode (debug level)
-./orangenote-cli transcribe input.mp3 --verbose
+orangenote-cli transcribe input.mp3 --verbose
 
 # Specific log level
-./orangenote-cli transcribe input.mp3 --log-level debug
+orangenote-cli transcribe input.mp3 --log-level debug
 ```
 
 ## Troubleshooting
@@ -254,7 +283,7 @@ Enable detailed logging:
 
 Use chunking with a smaller chunk size:
 ```bash
-./orangenote-cli transcribe audio.mp3 --model medium --chunk-size 5
+orangenote-cli transcribe audio.mp3 --model medium --chunk-size 5
 ```
 
 ### Poor transcription quality
@@ -281,7 +310,7 @@ ffmpeg -i input.ogg -ar 16000 -ac 1 output.wav
 
 Use a smaller model:
 ```bash
-./orangenote-cli transcribe audio.mp3 --model tiny
+orangenote-cli transcribe audio.mp3 --model tiny
 ```
 
 ### Slow performance
