@@ -23,7 +23,7 @@ jobs:
             asset_name: orangenote-cli-${{ github.ref_name }}-aarch64-apple-darwin
 
           # macOS Intel
-          - os: macos-13
+          - os: macos-14
             target: x86_64-apple-darwin
             artifact_name: orangenote-cli
             asset_name: orangenote-cli-${{ github.ref_name }}-x86_64-apple-darwin
