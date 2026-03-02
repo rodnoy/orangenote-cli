@@ -47,3 +47,8 @@
 .DS_Store
 Thumbs.db
 /doc
+
+# Custom
+*.json
+*.aiff
+/homebrew/
