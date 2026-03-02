@@ -184,6 +184,7 @@ jobs:
           # Get SHA256 values
           ARM_SHA256=$(cat artifacts/orangenote-cli-${GITHUB_REF_NAME}-aarch64-apple-darwin/orangenote-cli-${GITHUB_REF_NAME}-aarch64-apple-darwin.tar.gz.sha256 | awk '{print $1}')
           INTEL_SHA256=$(cat artifacts/orangenote-cli-${GITHUB_REF_NAME}-x86_64-apple-darwin/orangenote-cli-${GITHUB_REF_NAME}-x86_64-apple-darwin.tar.gz.sha256 | awk '{print $1}')
+          LINUX_SHA256=$(cat artifacts/orangenote-cli-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu/orangenote-cli-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz.sha256 | awk '{print $1}')
 
           # Create updated formula
           cat > homebrew-tap/Formula/orangenote-cli.rb << EOF
@@ -204,6 +205,13 @@ jobs:
               end
             end
 
+            on_linux do
+              on_intel do
+                url "https://github.com/rodnoy/orangenote-cli/releases/download/${GITHUB_REF_NAME}/orangenote-cli-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "$LINUX_SHA256"
+              end
+            end
+
             def install
               bin.install "orangenote-cli"
             end
@@ -216,12 +224,21 @@ jobs:
                 For better accuracy (especially for non-English languages):
                   orangenote-cli model download medium
 
-                Available models: tiny, base, small, medium, large
+                Available models: tiny (39MB), base (140MB), small (466MB), medium (1.5GB), large (2.9GB)
+
+                Example usage:
+                  orangenote-cli transcribe audio.mp3 --language ru --model medium
+
+                For long audio files (>30 min), use chunking:
+                  orangenote-cli transcribe podcast.mp3 --chunk-size 5
+
+                Documentation: https://github.com/rodnoy/orangenote-cli
               EOS
             end
 
             test do
               assert_match version.to_s, shell_output("#{bin}/orangenote-cli --version")
+              assert_match "transcribe", shell_output("#{bin}/orangenote-cli --help")
             end
           end
           EOF
