@@ -183,8 +183,15 @@ fn build_from_submodule(whisper_dir: &PathBuf) -> bool {
         .arg("-DBUILD_SHARED_LIBS=OFF")
         .arg("-DWHISPER_CPP_ONLY=ON")
         .arg("-DGGML_OPENMP=OFF")
-        .arg("-DWHISPER_NO_OPENMP=ON")
-        .arg(&abs_whisper_dir);
+        .arg("-DWHISPER_NO_OPENMP=ON");
+
+    // Handle cross-compilation for x86_64 on macOS
+    let target = env::var("TARGET").unwrap_or_default();
+    if target == "x86_64-apple-darwin" {
+        cmake_configure_cmd.arg("-DCMAKE_OSX_ARCHITECTURES=x86_64");
+    }
+
+    cmake_configure_cmd.arg(&abs_whisper_dir);
 
     let cmake_output = cmake_configure_cmd.output();
 
