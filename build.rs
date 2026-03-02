@@ -176,6 +176,16 @@ fn build_from_submodule(whisper_dir: &PathBuf) -> bool {
 
     // Run cmake configure
     println!("cargo:warning=Running cmake configure...");
+    
+    // Detect cross-compilation
+    let target = env::var("TARGET").unwrap_or_default();
+    let host = env::var("HOST").unwrap_or_default();
+    let is_cross_compiling = target != host;
+    
+    println!("cargo:warning=Target: {}", target);
+    println!("cargo:warning=Host: {}", host);
+    println!("cargo:warning=Cross-compiling: {}", is_cross_compiling);
+    
     let mut cmake_configure_cmd = Command::new(&cmake_cmd);
     cmake_configure_cmd
         .current_dir(&build_dir)
@@ -185,10 +195,37 @@ fn build_from_submodule(whisper_dir: &PathBuf) -> bool {
         .arg("-DGGML_OPENMP=OFF")
         .arg("-DWHISPER_NO_OPENMP=ON");
 
-    // Handle cross-compilation for x86_64 on macOS
-    let target = env::var("TARGET").unwrap_or_default();
-    if target == "x86_64-apple-darwin" {
-        cmake_configure_cmd.arg("-DCMAKE_OSX_ARCHITECTURES=x86_64");
+    // Handle cross-compilation for macOS
+    #[cfg(target_os = "macos")]
+    {
+        if is_cross_compiling {
+            // Cross-compiling on macOS
+            if target.contains("x86_64") && host.contains("aarch64") {
+                // Building x86_64 on Apple Silicon
+                println!("cargo:warning=Configuring for x86_64 cross-compilation on Apple Silicon");
+                cmake_configure_cmd.arg("-DCMAKE_OSX_ARCHITECTURES=x86_64");
+                cmake_configure_cmd.arg("-DCMAKE_SYSTEM_PROCESSOR=x86_64");
+                // Explicitly set C/C++ flags for x86_64 to override any host-specific flags
+                cmake_configure_cmd.arg("-DCMAKE_C_FLAGS=-arch x86_64");
+                cmake_configure_cmd.arg("-DCMAKE_CXX_FLAGS=-arch x86_64");
+                // Explicitly disable ARM-specific optimizations
+                cmake_configure_cmd.arg("-DGGML_METAL=OFF");
+            } else if target.contains("aarch64") && host.contains("x86_64") {
+                // Building ARM on Intel (less common but possible)
+                println!("cargo:warning=Configuring for ARM64 cross-compilation on Intel");
+                cmake_configure_cmd.arg("-DCMAKE_OSX_ARCHITECTURES=arm64");
+                cmake_configure_cmd.arg("-DCMAKE_SYSTEM_PROCESSOR=arm64");
+                cmake_configure_cmd.arg("-DCMAKE_C_FLAGS=-arch arm64");
+                cmake_configure_cmd.arg("-DCMAKE_CXX_FLAGS=-arch arm64");
+            }
+        } else {
+            // Native compilation - let CMake detect architecture
+            if target.contains("x86_64") {
+                cmake_configure_cmd.arg("-DCMAKE_OSX_ARCHITECTURES=x86_64");
+            } else if target.contains("aarch64") {
+                cmake_configure_cmd.arg("-DCMAKE_OSX_ARCHITECTURES=arm64");
+            }
+        }
     }
 
     cmake_configure_cmd.arg(&abs_whisper_dir);
