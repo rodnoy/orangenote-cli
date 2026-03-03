@@ -205,18 +205,26 @@ fn build_from_submodule(whisper_dir: &PathBuf) -> bool {
                 println!("cargo:warning=Configuring for x86_64 cross-compilation on Apple Silicon");
                 cmake_configure_cmd.arg("-DCMAKE_OSX_ARCHITECTURES=x86_64");
                 cmake_configure_cmd.arg("-DCMAKE_SYSTEM_PROCESSOR=x86_64");
+                cmake_configure_cmd.arg("-DCMAKE_SYSTEM_NAME=Darwin");
                 // Explicitly set C/C++ flags for x86_64 to override any host-specific flags
                 cmake_configure_cmd.arg("-DCMAKE_C_FLAGS=-arch x86_64");
                 cmake_configure_cmd.arg("-DCMAKE_CXX_FLAGS=-arch x86_64");
                 // Explicitly disable ARM-specific optimizations
                 cmake_configure_cmd.arg("-DGGML_METAL=OFF");
+                // CRITICAL: Disable GGML_NATIVE to prevent -mcpu=apple-m1 from being added
+                // When GGML_NATIVE=ON, ggml runs the compiler with -mcpu=native which returns
+                // -mcpu=apple-m1 on Apple Silicon host, breaking x86_64 cross-compilation
+                cmake_configure_cmd.arg("-DGGML_NATIVE=OFF");
             } else if target.contains("aarch64") && host.contains("x86_64") {
                 // Building ARM on Intel (less common but possible)
                 println!("cargo:warning=Configuring for ARM64 cross-compilation on Intel");
                 cmake_configure_cmd.arg("-DCMAKE_OSX_ARCHITECTURES=arm64");
                 cmake_configure_cmd.arg("-DCMAKE_SYSTEM_PROCESSOR=arm64");
+                cmake_configure_cmd.arg("-DCMAKE_SYSTEM_NAME=Darwin");
                 cmake_configure_cmd.arg("-DCMAKE_C_FLAGS=-arch arm64");
                 cmake_configure_cmd.arg("-DCMAKE_CXX_FLAGS=-arch arm64");
+                // Disable GGML_NATIVE for cross-compilation
+                cmake_configure_cmd.arg("-DGGML_NATIVE=OFF");
             }
         } else {
             // Native compilation - let CMake detect architecture
