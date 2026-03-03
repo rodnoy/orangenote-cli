@@ -46,9 +46,28 @@ endif()
 
 ### Solution
 
-**File**: `build.rs:214-217`
+**File**: `build.rs`
 
-Explicitly disable `GGML_NATIVE` when cross-compiling:
+Two complementary measures prevent host CPU flags from leaking into the
+cross-compiled build:
+
+#### 1. Strip environment variables
+
+```rust
+// Remove environment variables that may carry host-specific CPU flags
+// (e.g. CFLAGS="-mcpu=apple-m1") and leak them into the CMake build.
+cmake_configure_cmd.env_remove("CFLAGS");
+cmake_configure_cmd.env_remove("CXXFLAGS");
+cmake_configure_cmd.env_remove("CPPFLAGS");
+```
+
+This is necessary because CMake reads `$CFLAGS` / `$CXXFLAGS` from the
+environment and appends them to `CMAKE_C_FLAGS_INIT` / `CMAKE_CXX_FLAGS_INIT`.
+If the CI runner or any prior build step sets these variables with
+`-mcpu=apple-m1`, the flag will end up in the compile command even when
+`GGML_NATIVE=OFF`.
+
+#### 2. Disable GGML_NATIVE
 
 ```rust
 // CRITICAL: Disable GGML_NATIVE to prevent -mcpu=apple-m1 from being added
@@ -60,12 +79,14 @@ cmake_configure_cmd.arg("-DGGML_NATIVE=OFF");
 ### Complete Fix
 
 The fix includes:
-1. `-DCMAKE_SYSTEM_NAME=Darwin` - Helps CMake detect cross-compilation
-2. `-DCMAKE_SYSTEM_PROCESSOR=x86_64` - Sets target processor
-3. `-DCMAKE_OSX_ARCHITECTURES=x86_64` - Sets macOS architecture
-4. `-DCMAKE_C_FLAGS=-arch x86_64` - Forces x86_64 compilation
-5. `-DCMAKE_CXX_FLAGS=-arch x86_64` - Forces x86_64 compilation
-6. **`-DGGML_NATIVE=OFF`** - **Critical**: Prevents host CPU detection
+1. `env_remove("CFLAGS")` / `env_remove("CXXFLAGS")` / `env_remove("CPPFLAGS")` - Strips host-specific flags from environment
+2. `-DCMAKE_SYSTEM_NAME=Darwin` - Helps CMake detect cross-compilation (`CMAKE_CROSSCOMPILING=TRUE`)
+3. `-DCMAKE_SYSTEM_PROCESSOR=x86_64` - Sets target processor
+4. `-DCMAKE_OSX_ARCHITECTURES=x86_64` - Sets macOS architecture
+5. `-DCMAKE_C_FLAGS=-arch x86_64` - Forces x86_64 compilation
+6. `-DCMAKE_CXX_FLAGS=-arch x86_64` - Forces x86_64 compilation
+7. **`-DGGML_NATIVE=OFF`** - **Critical**: Prevents host CPU detection
+8. `-DGGML_METAL=OFF` - Disables Metal (ARM-only GPU framework)
 
 ### Alternative Solutions
 

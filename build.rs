@@ -199,6 +199,12 @@ fn build_from_submodule(whisper_dir: &PathBuf) -> bool {
     #[cfg(target_os = "macos")]
     {
         if is_cross_compiling {
+            // Remove environment variables that may carry host-specific CPU flags
+            // (e.g. CFLAGS="-mcpu=apple-m1") and leak them into the CMake build.
+            cmake_configure_cmd.env_remove("CFLAGS");
+            cmake_configure_cmd.env_remove("CXXFLAGS");
+            cmake_configure_cmd.env_remove("CPPFLAGS");
+
             // Cross-compiling on macOS
             if target.contains("x86_64") && host.contains("aarch64") {
                 // Building x86_64 on Apple Silicon
@@ -270,6 +276,13 @@ fn build_from_submodule(whisper_dir: &PathBuf) -> bool {
         .arg(&build_dir)
         .arg("--config")
         .arg("Release");
+
+    // Strip host-specific flags from the build environment during cross-compilation
+    if is_cross_compiling {
+        cmake_build_cmd.env_remove("CFLAGS");
+        cmake_build_cmd.env_remove("CXXFLAGS");
+        cmake_build_cmd.env_remove("CPPFLAGS");
+    }
 
     let cmake_build_output = cmake_build_cmd.output();
 
